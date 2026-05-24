@@ -1,55 +1,55 @@
 <Publish>
 	<!--Id must be set in order to update existed mod. it is not required for publishing mod for the first time-->
-	<ModId Value="0" />
+	<ModId Value="145221" />
 	<!--Name of the mod to display to players-->
-	<DisplayName Value="Advanced Road Naming" />
+	<DisplayName Value="Advanced Road Naming [BETA]" />
 	<!--Short description of the mod-->
-	<ShortDescription Value="Advanced Road Naming" />
+	<ShortDescription Value="Advanced segment based road naming" />
 	<!--Long description of the mod. Single line or multi line. Supports minimal markdown subset-->
 	<!--LongDescription Value="This is a long description" /-->
 	<LongDescription>
-		# Overview
-		This is a mod focused on segment-based road editing. Instead of changing every road with the same name, it lets you select an exact path of connected road segments and apply changes only to that chosen route.
+# Overview
+This mod focuses on segment-based road editing. Instead of changing every road with the same name, it lets you select an exact path of connected road segments and apply changes only to that chosen route.
+The main goal is to give players more control over road naming, since the base game implementation is fairly limited. As a bonus, the mod also supports route designations, making it easy to add route names to highways, arterials, bypasses, and other road corridors.
+		
+The mod currently has two main modes, both of which can be accessed by clicking on a road segment.
 
-		The mod currently has two main modes,
-		both of which can be accessed by clicking on a road segment.
+# Road Route Naming
+## (Work in Progress)
+This mode lets you assign major route numbers, such as A1, M2, or A8, to a selected road corridor. The original street names remain intact, but the chosen segments gain the route designation. This makes it possible to build routes across multiple streets without renaming the roads themselves, while avoiding unwanted parts of a road receiving the route number.
 
-		# Road Route Naming
-		# (Work in Progress)
-		This mode lets you assign major route numbers such as A1, M2, or A8 to a selected road corridor. The original street names stay intact, but the chosen segments gain the route designation, making it possible to build routes across multiple streets without renaming the roads themselves and avoid facing issues of undesired parts of a road w/ the route number.
+# Road Renaming
+This mode lets you rename only the specific road segments you select. That means you can create custom named road corridors without accidentally renaming the entire vanilla-defined “connected” road.
 
-		# Road Renaming
+# Road Name Persistence
+Updating roads near renamed roads using this mod may cause the naming to be overridden by the game.
 
-		This mode lets you rename only the specific road segments you select. That means you can create custom named road corridors without accidentally renaming the entire vanilla defined 'connected' road.
+The mod does its best to ensure your name changes persist after the road is updated, such as when a new intersection is created on that road or the road is replaced with a different type.
 
-		The main goal is to give players more control over road naming as the base game implementation kinda sucks. As a plus the mod also has route designation making it easy to have route naming of highways, arterials, bypasses and other road corridors.
+If the mod cannot preserve your naming, you can simply use it again to apply the desired road name or route designation.
 
-		# Road Name Persistence
-		Updating roads near renamed roads using this mod may cause the naming to be overriden by the game.
-		The mod does its best to ensure your name changes persist after the road is updated (ie. New intersection is created on that road, or road is replaced with a different type).
-		If the mod cannot persist your naming; you can simply use it again to apply the desired name route.
+# Credits
 
-		# Credits
+- krzychu124 - Gave insights into how the aggregate system worked, and how to persist changes.
+- Bruceyboy24804 - Improving Json code.
 
-		- krzychu124 - Gave insights into how the aggregate system worked, and how to persist changes.
-		- Bruceyboy24804 - Improving Json code.
+# Compatibility
 
-		# Compatibility
-
-		- Works with Remove Road Names
-
-		# Links
+- Works with Road Name Remover
 	</LongDescription>
 	<!--Thumbnail-->
 	<Thumbnail Value="Properties/Thumbnail.png" />
 	<!--Screenshot, can be set multiple times-->
-	<Screenshot Value="Properties/Screenshots/" />
+	<Screenshot Value="Properties/Screenshots/10Thumbnail.png" />
+	<Screenshot Value="Properties/Screenshots/20Before.png" />
+	<Screenshot Value="Properties/Screenshots/30During.png" />
+	<Screenshot Value="Properties/Screenshots/40After.png" />
 	<!--Tag, can be set multiple times-->
-	<Tag Value="Beta" />
+	<Tag Value="Code Mod" />
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.0" />
+	<ModVersion Value="0.1.2" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.5.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -57,11 +57,14 @@
 	<!--Required DLC, can be set multiple times. Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture"-->
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
-	<ChangeLog Value="" />
+	<ChangeLog Value="
+			   - Further Mod description fixes
+			   " />
 	<!--<ChangeLog>
 	</ChangeLog>-->
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
 	<ExternalLink Type="github" Url="https://github.com/Brainiume/CS2Mod-AdvancedRoadNaming" />
+	<ExternalLink Type="discord" Url="https://discord.gg/HTav7ARPs2"/>
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>
