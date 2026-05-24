@@ -1,27 +1,57 @@
 <Publish>
 	<!--Id must be set in order to update existed mod. it is not required for publishing mod for the first time-->
-	<ModId Value="" />
+	<ModId Value="0" />
 	<!--Name of the mod to display to players-->
 	<DisplayName Value="Advanced Road Naming" />
 	<!--Short description of the mod-->
-	<ShortDescription Value="This is a short description" />
+	<ShortDescription Value="Advanced Road Naming" />
 	<!--Long description of the mod. Single line or multi line. Supports minimal markdown subset-->
 	<!--LongDescription Value="This is a long description" /-->
 	<LongDescription>
-This is a long description
+		# Overview
+		This is a mod focused on segment-based road editing. Instead of changing every road with the same name, it lets you select an exact path of connected road segments and apply changes only to that chosen route.
+
+		The mod currently has two main modes,
+		both of which can be accessed by clicking on a road segment.
+
+		# Road Route Naming
+		# (Work in Progress)
+		This mode lets you assign major route numbers such as A1, M2, or A8 to a selected road corridor. The original street names stay intact, but the chosen segments gain the route designation, making it possible to build routes across multiple streets without renaming the roads themselves and avoid facing issues of undesired parts of a road w/ the route number.
+
+		# Road Renaming
+
+		This mode lets you rename only the specific road segments you select. That means you can create custom named road corridors without accidentally renaming the entire vanilla defined 'connected' road.
+
+		The main goal is to give players more control over road naming as the base game implementation kinda sucks. As a plus the mod also has route designation making it easy to have route naming of highways, arterials, bypasses and other road corridors.
+
+		# Road Name Persistence
+		Updating roads near renamed roads using this mod may cause the naming to be overriden by the game.
+		The mod does its best to ensure your name changes persist after the road is updated (ie. New intersection is created on that road, or road is replaced with a different type).
+		If the mod cannot persist your naming; you can simply use it again to apply the desired name route.
+
+		# Credits
+
+		- krzychu124 - Gave insights into how the aggregate system worked, and how to persist changes.
+		- Bruceyboy24804 - Improving Json code.
+
+		# Compatibility
+
+		- Works with Remove Road Names
+
+		# Links
 	</LongDescription>
 	<!--Thumbnail-->
 	<Thumbnail Value="Properties/Thumbnail.png" />
 	<!--Screenshot, can be set multiple times-->
-	<Screenshot Value="" />
+	<Screenshot Value="Properties/Screenshots/" />
 	<!--Tag, can be set multiple times-->
-	<Tag Value="" />
+	<Tag Value="Beta" />
 	<!--Link to the forum post where the mod can be discussed-->
-	<ForumLink Value="" />
+	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="1.0" />
+	<ModVersion Value="0.1.0" />
 	<!--Recommended version of the base game to use the mod-->
-	<GameVersion Value="1.0.*" />
+	<GameVersion Value="1.5.*" />
 	<!--Dependency for the mod, can be set multiple times-->
 	<Dependency Id="" />
 	<!--Required DLC, can be set multiple times. Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture"-->
@@ -31,7 +61,7 @@ This is a long description
 	<!--<ChangeLog>
 	</ChangeLog>-->
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->
-	<ExternalLink Type="" Url="" />
+	<ExternalLink Type="github" Url="https://github.com/Brainiume/CS2Mod-AdvancedRoadNaming" />
 	<!--Supported values Public, Private, Unlisted-->
 	<AccessLevel Value="Public" />
 </Publish>

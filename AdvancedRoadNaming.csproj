@@ -138,6 +138,10 @@
 		<None Include="ModAssemblyInfo\ModAssemblyInfo.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+ 		<Folder Include="Properties\Screenshots\" />
+	</ItemGroup>
+
 
 </Project>
 
