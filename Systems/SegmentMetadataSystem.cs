@@ -25,7 +25,6 @@ namespace AdvancedRoadNaming.Systems
         private const int DeferredNameReapplyDelayTicks = 5;
         private const int DeferredNameReapplyRetryDelayTicks = 10;
         private const int DeferredNameReapplyMaxAttempts = 10;
-        private const int ProtectedAggregateBufferCleanupIntervalTicks = 10;
         private const float RebuildCandidateOverlapThreshold = 0.8f;
 
         private SegmentMetadataRepository _repository;
@@ -36,16 +35,11 @@ namespace AdvancedRoadNaming.Systems
         private RouteDatabaseService _routeDatabase;
         private NameSystem _nameSystem;
         private EntityQuery _aggregatedRoadEdgeQuery;
-        private EntityQuery _aggregateOwnerQuery;
-        private EntityQuery _managedAggregateOwnerQuery;
-        private EntityQuery _updatedAggregateOwnerQuery;
-        private EntityQuery _advancedRoadNamingAggregateMemberQuery;
         private readonly List<AggregateSplitStabilityCheck> _aggregateStabilityChecks = new List<AggregateSplitStabilityCheck>();
         private bool _pendingPostLoadNameReapply;
         private int _pendingPostLoadNameReapplyDelayTicks;
         private int _pendingPostLoadNameReapplyAttempts;
         private bool _pendingPostLoadNameReapplyWaitingLogged;
-        private int _protectedAggregateBufferCleanupTicks;
 
         public SegmentMetadataRepository Repository => _repository;
 
@@ -69,10 +63,6 @@ namespace AdvancedRoadNaming.Systems
             _routeDatabase = new RouteDatabaseService();
             _nameSystem = World.GetOrCreateSystemManaged<NameSystem>();
             _aggregatedRoadEdgeQuery = GetEntityQuery(ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Road>(), ComponentType.ReadOnly<Aggregated>());
-            _aggregateOwnerQuery = GetEntityQuery(ComponentType.ReadOnly<Aggregate>(), ComponentType.ReadWrite<AggregateElement>());
-            _managedAggregateOwnerQuery = GetEntityQuery(ComponentType.ReadOnly<Aggregate>(), ComponentType.ReadOnly<AdvancedRoadNamingManagedAggregate>(), ComponentType.ReadWrite<AggregateElement>());
-            _updatedAggregateOwnerQuery = GetEntityQuery(ComponentType.ReadOnly<Aggregate>(), ComponentType.ReadOnly<AggregateElement>(), ComponentType.ReadOnly<Updated>());
-            _advancedRoadNamingAggregateMemberQuery = GetEntityQuery(ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Road>(), ComponentType.ReadOnly<AdvancedRoadNamingAggregateMember>());
             _applyService = new RouteApplyService(_repository, _validation, _resolver, _routeCodeService, GetBaseName, SetSegmentDisplayName, message => Mod.log.Info(message));
             Mod.log.Info("SegmentMetadataSystem created");
         }
@@ -83,9 +73,16 @@ namespace AdvancedRoadNaming.Systems
         // aggregates after splitting them for a name change and reapplying the split if needed
         protected override void OnUpdate()
         {
+            if (!IsSafeForLiveAggregateMaintenance())
+                return;
+
             ProcessDeferredPostLoadNameReapply();
             UpdateAggregateStabilityChecks();
-            CleanupProtectedAggregateBuffersIfDue();
+        }
+
+        private bool IsSafeForLiveAggregateMaintenance()
+        {
+            return IsSafeForPostLoadNameWrites(out _);
         }
         
         // gets Apply Service to apply the given new road name to the provided segments. 
@@ -229,7 +226,6 @@ namespace AdvancedRoadNaming.Systems
                 remainderAggregateCount++;
                 remainderAggregateSet.Add(remainderAggregate);
                 AssignAggregateEdges(remainderAggregate, remainderComponents[i], operation, "Remainder");
-                SetAuthoritativeName(remainderAggregate, originalVisibleName, operation, "RemainderAggregate", remainderComponents[i].Count, allAggregateEdges.Count);
                 Mod.log.Info(() => $"Road Naming: remainder preserved. SourceAggregate={sourceAggregate.Index}, RemainderAggregate={remainderAggregate.Index}, Edges={remainderComponents[i].Count}, RetainedName='{originalVisibleName}'.");
             }
 
@@ -248,7 +244,6 @@ namespace AdvancedRoadNaming.Systems
                 Mod.log.Info(() => $"Road Naming: selected subsection assigned. SourceAggregate={sourceAggregate.Index}, NewSelectedAggregate={selectedAggregate.Index}, Edges={selectedComponents[i].Count}, AssignedName='{selectedFinalName}'.");
             }
 
-            RemoveProtectedEdgesFromUnmanagedAggregateBuffers(allAggregateEdges, operation);
             var verified = VerifyPartitionOwnership(sourceAggregate, selectedEdges, remainderEdges, selectedAggregateSet, remainderAggregateSet, selectedFinalName, originalVisibleName, operation);
             if (scheduleStabilityCheck && selectedAggregateCount > 0 && remainderAggregateCount > 0)
                 RegisterAggregateStabilityCheck(sourceAggregate, selectedEdges, remainderEdges, selectedFinalName, originalVisibleName, operation);
@@ -279,10 +274,10 @@ namespace AdvancedRoadNaming.Systems
                 var edge = remainderEdges[i];
                 var owner = GetAuthoritativeNameEntity(edge);
                 var ownerName = GetCurrentAuthoritativeName(owner, string.Empty);
-                if (!remainderAggregateSet.Contains(owner) || !string.Equals(ownerName, originalVisibleName, System.StringComparison.Ordinal))
+                if (!remainderAggregateSet.Contains(owner) || selectedAggregateSet.Contains(owner) || string.Equals(ownerName, selectedFinalName, System.StringComparison.Ordinal))
                 {
                     ok = false;
-                    Mod.log.Warn(() => $"Remainder ownership check failed. Operation={operation}, Edge={edge.Index}, Owner={owner.Index}, OwnerName='{ownerName}', ExpectedRetainedName='{originalVisibleName}', SourceAggregate={sourceAggregate.Index}.");
+                    Mod.log.Warn(() => $"Remainder ownership check failed. Operation={operation}, Edge={edge.Index}, Owner={owner.Index}, OwnerName='{ownerName}', OriginalVisibleName='{originalVisibleName}', SelectedName='{selectedFinalName}', SourceAggregate={sourceAggregate.Index}.");
                 }
             }
 
@@ -417,10 +412,10 @@ namespace AdvancedRoadNaming.Systems
                 var owner = GetAuthoritativeNameEntity(edge);
                 remainderOwners.Add(owner);
                 var ownerName = GetCurrentAuthoritativeName(owner, string.Empty);
-                if (owner == Entity.Null || selectedOwners.Contains(owner) || string.Equals(ownerName, check.SelectedFinalName, System.StringComparison.Ordinal) || !string.Equals(ownerName, check.OriginalVisibleName, System.StringComparison.Ordinal))
+                if (owner == Entity.Null || selectedOwners.Contains(owner) || string.Equals(ownerName, check.SelectedFinalName, System.StringComparison.Ordinal))
                 {
                     ok = false;
-                    Mod.log.Warn(() => $"Aggregate stability remainder-edge mismatch. Phase={phase}, Operation={check.Operation}, Edge={edge.Index}, Owner={owner.Index}, OwnerName='{ownerName}', ExpectedRetainedName='{check.OriginalVisibleName}', SelectedFinalName='{check.SelectedFinalName}'.");
+                    Mod.log.Warn(() => $"Aggregate stability remainder-edge mismatch. Phase={phase}, Operation={check.Operation}, Edge={edge.Index}, Owner={owner.Index}, OwnerName='{ownerName}', OriginalVisibleName='{check.OriginalVisibleName}', SelectedFinalName='{check.SelectedFinalName}'.");
                 }
             }
 
@@ -498,54 +493,8 @@ namespace AdvancedRoadNaming.Systems
 
                 TryPartitionAggregateForSelectedEdges(owner, pair.Value, selectedSet, "PostUpdateReapply:" + check.Operation, check.SelectedFinalName, check.OriginalVisibleName, false);
             }
-
-            RestoreRemainderNames(check, selectedSet);
         }
 
-        // Repairs the “unselected” / remainder side after reapply.
-        private void RestoreRemainderNames(AggregateSplitStabilityCheck check, HashSet<Entity> selectedSet)
-        {
-            var allTrackedSelectedEdges = BuildAllTrackedSelectedEdgeSet();
-            var remainderOwners = new HashSet<Entity>();
-            for (var i = 0; i < check.RemainderEdges.Count; i++)
-            {
-                var edge = check.RemainderEdges[i];
-                if (!_validation.IsValidRoadSegment(edge))
-                    continue;
-
-                var owner = GetAuthoritativeNameEntity(edge);
-                if (owner != Entity.Null && EntityManager.Exists(owner))
-                    remainderOwners.Add(owner);
-            }
-
-            foreach (var owner in remainderOwners)
-            {
-                var ownerEdges = GetAggregateRoadEdges(owner);
-                if (ContainsAny(ownerEdges, selectedSet) || ContainsAny(ownerEdges, allTrackedSelectedEdges))
-                    continue;
-
-                SetAuthoritativeName(owner, check.OriginalVisibleName, "PostUpdateRemainderRestore:" + check.Operation, "RemainderAggregateReapply", ownerEdges.Count, ownerEdges.Count);
-            }
-        }
-
-        // Gathers every currently tracked selected edge from active stability checks
-        // so the remainder restore step does not accidentally stomp on another live split.
-        private HashSet<Entity> BuildAllTrackedSelectedEdgeSet()
-        {
-            var result = new HashSet<Entity>();
-            for (var i = 0; i < _aggregateStabilityChecks.Count; i++)
-            {
-                var check = _aggregateStabilityChecks[i];
-                for (var edgeIndex = 0; edgeIndex < check.SelectedEdges.Count; edgeIndex++)
-                {
-                    var edge = check.SelectedEdges[edgeIndex];
-                    if (_validation.IsValidRoadSegment(edge))
-                        result.Add(edge);
-                }
-            }
-
-            return result;
-        }
         // Small helper that keeps only road edges that still properly exist.
         private List<Entity> FilterValidRoadEdges(List<Entity> edges)
         {
@@ -615,7 +564,7 @@ namespace AdvancedRoadNaming.Systems
         // then tags things for a visual refresh without touching vanilla too hard.
         private void AssignAggregateEdges(Entity aggregate, List<Entity> edges, string operation, string role)
         {
-            MarkManagedAggregate(aggregate);
+            UnmarkManagedAggregate(aggregate);
             var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate);
             buffer.Clear();
             for (var i = 0; i < edges.Count; i++)
@@ -630,7 +579,7 @@ namespace AdvancedRoadNaming.Systems
                 else
                     EntityManager.AddComponentData(edge, new Aggregated { m_Aggregate = aggregate });
 
-                MarkManagedAggregateEdge(edge);
+                UnmarkManagedAggregateEdge(edge);
                 EnsureRefreshTag<BatchesUpdated>(edge);
                 Mod.log.Info(() => $"Road Naming: aggregate edge assignment. Operation={operation}, Role={role}, Edge={edge.Index}, Aggregate={aggregate.Index}, EdgeUpdatedTagSkipped=True.");
             }
@@ -640,233 +589,16 @@ namespace AdvancedRoadNaming.Systems
             EnsureRefreshTag<BatchesUpdated>(aggregate);
         }
 
-        // Tags aggregate owners and member edges created by this mod. The vanilla
-        // AggregateSystem query is patched to skip these edge tags.
-        private void MarkManagedAggregate(Entity aggregate)
+        private void UnmarkManagedAggregate(Entity aggregate)
         {
-            if (aggregate != Entity.Null && EntityManager.Exists(aggregate) && !EntityManager.HasComponent<AdvancedRoadNamingManagedAggregate>(aggregate))
-                EntityManager.AddComponent<AdvancedRoadNamingManagedAggregate>(aggregate);
+            if (aggregate != Entity.Null && EntityManager.Exists(aggregate) && EntityManager.HasComponent<AdvancedRoadNamingManagedAggregate>(aggregate))
+                EntityManager.RemoveComponent<AdvancedRoadNamingManagedAggregate>(aggregate);
         }
 
-        private void MarkManagedAggregateEdge(Entity edge)
+        private void UnmarkManagedAggregateEdge(Entity edge)
         {
-            if (edge != Entity.Null && EntityManager.Exists(edge) && !EntityManager.HasComponent<AdvancedRoadNamingAggregateMember>(edge))
-                EntityManager.AddComponent<AdvancedRoadNamingAggregateMember>(edge);
-        }
-
-        // A tagged edge must not remain in any aggregate buffer except the
-        // Advanced Road Naming-owned aggregate that currently owns it, otherwise vanilla can
-        // still reach it indirectly through AggregateElement.
-        private void RemoveProtectedEdgesFromUnmanagedAggregateBuffers(List<Entity> protectedEdges, string operation)
-        {
-            if (protectedEdges.Count == 0)
-                return;
-
-            var protectedSet = new HashSet<Entity>();
-            var allowedOwnerByEdge = new Dictionary<Entity, Entity>();
-            for (var edgeIndex = 0; edgeIndex < protectedEdges.Count; edgeIndex++)
-            {
-                var edge = protectedEdges[edgeIndex];
-                if (edge == Entity.Null || !EntityManager.Exists(edge))
-                    continue;
-
-                protectedSet.Add(edge);
-                if (EntityManager.HasComponent<Aggregated>(edge))
-                {
-                    var owner = EntityManager.GetComponentData<Aggregated>(edge).m_Aggregate;
-                    if (owner != Entity.Null
-                        && EntityManager.Exists(owner)
-                        && EntityManager.HasComponent<AdvancedRoadNamingManagedAggregate>(owner))
-                    {
-                        allowedOwnerByEdge[edge] = owner;
-                    }
-                }
-            }
-
-            if (protectedSet.Count == 0)
-                return;
-
-            AddManagedAggregateBufferOwners(protectedSet, allowedOwnerByEdge);
-            RepairProtectedEdgeReverseOwnership(allowedOwnerByEdge, operation);
-
-            var aggregates = _aggregateOwnerQuery.ToEntityArray(Allocator.Temp);
-            try
-            {
-                for (var aggregateIndex = 0; aggregateIndex < aggregates.Length; aggregateIndex++)
-                {
-                    var aggregate = aggregates[aggregateIndex];
-                    if (!EntityManager.Exists(aggregate) || !EntityManager.HasBuffer<AggregateElement>(aggregate))
-                        continue;
-
-                    var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate);
-                    var removed = 0;
-                    for (var elementIndex = buffer.Length - 1; elementIndex >= 0; elementIndex--)
-                    {
-                        var edge = buffer[elementIndex].m_Edge;
-                        if (!protectedSet.Contains(edge))
-                            continue;
-
-                        allowedOwnerByEdge.TryGetValue(edge, out var allowedOwner);
-                        if (aggregate == allowedOwner)
-                            continue;
-
-                        buffer.RemoveAt(elementIndex);
-                        removed++;
-                    }
-
-                    if (removed > 0)
-                    {
-                        EnsureRefreshTag<Updated>(aggregate);
-                        EnsureRefreshTag<BatchesUpdated>(aggregate);
-                        Mod.log.Warn(() => $"Road Naming: removed protected Advanced Road Naming edges from unmanaged aggregate buffer. Operation={operation}, Aggregate={aggregate.Index}, RemovedEdges={removed}.");
-                    }
-                }
-            }
-            finally
-            {
-                aggregates.Dispose();
-            }
-        }
-
-        // Builds the authoritative Advanced Road Naming owner map from managed aggregate buffers.
-        // This is the part vanilla can not safely infer from Aggregated.m_Aggregate after
-        // a nearby road update has temporarily pointed a protected edge at a vanilla owner.
-        private void AddManagedAggregateBufferOwners(HashSet<Entity> protectedSet, Dictionary<Entity, Entity> allowedOwnerByEdge)
-        {
-            var managedAggregates = _managedAggregateOwnerQuery.ToEntityArray(Allocator.Temp);
-            try
-            {
-                for (var aggregateIndex = 0; aggregateIndex < managedAggregates.Length; aggregateIndex++)
-                {
-                    var aggregate = managedAggregates[aggregateIndex];
-                    if (!EntityManager.Exists(aggregate) || !EntityManager.HasBuffer<AggregateElement>(aggregate))
-                        continue;
-
-                    var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate, true);
-                    for (var elementIndex = 0; elementIndex < buffer.Length; elementIndex++)
-                    {
-                        var edge = buffer[elementIndex].m_Edge;
-                        if (!protectedSet.Contains(edge))
-                            continue;
-
-                        if (!allowedOwnerByEdge.TryGetValue(edge, out var currentOwner)
-                            || currentOwner == Entity.Null
-                            || !EntityManager.Exists(currentOwner))
-                        {
-                            allowedOwnerByEdge[edge] = aggregate;
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                managedAggregates.Dispose();
-            }
-        }
-
-        // Restores the reverse edge -> aggregate link to the Advanced Road Naming aggregate before
-        // trimming vanilla buffers. Without this, a vanilla aggregate can consume a
-        // protected edge and leave the mod aggregate orphaned until the route is reapplied.
-        private void RepairProtectedEdgeReverseOwnership(Dictionary<Entity, Entity> allowedOwnerByEdge, string operation)
-        {
-            foreach (var pair in allowedOwnerByEdge)
-            {
-                var edge = pair.Key;
-                var allowedOwner = pair.Value;
-                if (edge == Entity.Null
-                    || allowedOwner == Entity.Null
-                    || !EntityManager.Exists(edge)
-                    || !EntityManager.Exists(allowedOwner))
-                {
-                    continue;
-                }
-
-                MarkManagedAggregate(allowedOwner);
-                MarkManagedAggregateEdge(edge);
-                EnsureAggregateBufferContainsEdge(allowedOwner, edge);
-
-                var repaired = false;
-                if (EntityManager.HasComponent<Aggregated>(edge))
-                {
-                    var aggregated = EntityManager.GetComponentData<Aggregated>(edge);
-                    if (aggregated.m_Aggregate != allowedOwner)
-                    {
-                        aggregated.m_Aggregate = allowedOwner;
-                        EntityManager.SetComponentData(edge, aggregated);
-                        repaired = true;
-                    }
-                }
-                else
-                {
-                    EntityManager.AddComponentData(edge, new Aggregated { m_Aggregate = allowedOwner });
-                    repaired = true;
-                }
-
-                if (!repaired)
-                    continue;
-
-                EnsureRefreshTag<BatchesUpdated>(edge);
-                EnsureRefreshTag<Updated>(allowedOwner);
-                EnsureRefreshTag<BatchesUpdated>(allowedOwner);
-                Mod.log.Warn(() => $"Road Naming: restored Advanced Road Naming aggregate ownership after vanilla aggregate update. Operation={operation}, Edge={edge.Index}, ManagedAggregate={allowedOwner.Index}.");
-            }
-        }
-
-        private void EnsureAggregateBufferContainsEdge(Entity aggregate, Entity edge)
-        {
-            if (aggregate == Entity.Null
-                || edge == Entity.Null
-                || !EntityManager.Exists(aggregate)
-                || !EntityManager.Exists(edge)
-                || !EntityManager.HasBuffer<AggregateElement>(aggregate))
-            {
-                return;
-            }
-
-            var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate);
-            for (var i = 0; i < buffer.Length; i++)
-            {
-                if (buffer[i].m_Edge == edge)
-                    return;
-            }
-
-            buffer.Add(new AggregateElement { m_Edge = edge });
-        }
-
-        private void CleanupProtectedAggregateBuffersIfDue()
-        {
-            if (_aggregateStabilityChecks.Count == 0)
-            {
-                if (_updatedAggregateOwnerQuery.IsEmptyIgnoreFilter)
-                {
-                    _protectedAggregateBufferCleanupTicks--;
-                    if (_protectedAggregateBufferCleanupTicks > 0)
-                        return;
-                }
-
-                _protectedAggregateBufferCleanupTicks = ProtectedAggregateBufferCleanupIntervalTicks;
-            }
-            else
-            {
-                _protectedAggregateBufferCleanupTicks = 0;
-            }
-
-            var protectedEdges = _advancedRoadNamingAggregateMemberQuery.ToEntityArray(Allocator.Temp);
-            try
-            {
-                if (protectedEdges.Length == 0)
-                    return;
-
-                var edges = new List<Entity>(protectedEdges.Length);
-                for (var edgeIndex = 0; edgeIndex < protectedEdges.Length; edgeIndex++)
-                    edges.Add(protectedEdges[edgeIndex]);
-
-                RemoveProtectedEdgesFromUnmanagedAggregateBuffers(edges, "ProtectedAggregateBufferInvariant");
-            }
-            finally
-            {
-                protectedEdges.Dispose();
-            }
+            if (edge != Entity.Null && EntityManager.Exists(edge) && EntityManager.HasComponent<AdvancedRoadNamingAggregateMember>(edge))
+                EntityManager.RemoveComponent<AdvancedRoadNamingAggregateMember>(edge);
         }
 
         // Breaks a set of edges into connected chunks so each isolated bit
@@ -945,14 +677,13 @@ namespace AdvancedRoadNaming.Systems
 
             return string.IsNullOrWhiteSpace(fallback) ? $"Road Segment {nameEntity.Index}" : fallback.Trim();
         }
-        // Nudges the aggregate label state so vanilla refreshes the visuals,
-        // but leaves the label buffers alone to avoid names disappearing for a tick.
+        // Nudges the aggregate label state so vanilla refreshes the visuals.
+        // Do not clear generated label buffers here; the base game render jobs own them.
         private void InvalidateAggregateLabelState(Entity aggregate)
         {
             if (aggregate == Entity.Null || !EntityManager.Exists(aggregate))
                 return;
 
-           
             EnsureRefreshTag<Updated>(aggregate);
             EnsureRefreshTag<BatchesUpdated>(aggregate);
         }
@@ -2415,6 +2146,7 @@ namespace AdvancedRoadNaming.Systems
         // Writes segment metadata and saved route data into the save file.
         public void Serialize<TWriter>(TWriter writer) where TWriter : IWriter
         {
+            CleanupOrphanedMetadata();
             writer.Write(SaveVersion);
             writer.Write(_repository.Count);
             foreach (var metadata in _repository.All)

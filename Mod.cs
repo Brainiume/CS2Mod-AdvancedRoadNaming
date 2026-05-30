@@ -59,8 +59,6 @@ namespace AdvancedRoadNaming
             updateSystem.UpdateAfter<RoadSelectionInfoSectionSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateAt<RoadRouteOverlayGeometrySystem>(SystemUpdatePhase.Rendering);
             updateSystem.UpdateAt<RoadRouteHighlightSystem>(SystemUpdatePhase.Rendering);
-            RoadAggregateSystemQueryPatcher.Patch(updateSystem.World.GetOrCreateSystemManaged<AggregateSystem>());
-
             log.Info("Road Naming: systems registered");
         }
 

@@ -19,8 +19,11 @@ namespace AdvancedRoadNaming.Services
                 && _entityManager.Exists(entity)
                 && _entityManager.HasComponent<Edge>(entity)
                 && _entityManager.HasComponent<Road>(entity)
+                && _entityManager.HasComponent<Curve>(entity)
+                && _entityManager.HasComponent<Composition>(entity)
                 && !_entityManager.HasComponent<Deleted>(entity)
-                && !_entityManager.HasComponent<Destroyed>(entity);
+                && !_entityManager.HasComponent<Destroyed>(entity)
+                && !_entityManager.HasComponent<Game.Tools.Temp>(entity);
         }
     }
 }
