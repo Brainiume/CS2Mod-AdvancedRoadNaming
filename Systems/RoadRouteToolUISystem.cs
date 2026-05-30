@@ -144,7 +144,15 @@ namespace AdvancedRoadNaming.Systems
 
         private void SetInput(string value)
         {
-            Mod.log.Info(() => $"Road Naming: SetInput received. Value='{value ?? string.Empty}'.");
+            Mod.log.Info(() => 
+            {
+                if (string.IsNullOrEmpty(value))
+                    return "Road Naming: SetInput received empty value.";
+                
+                var hasNonAscii = value.Length != System.Text.Encoding.ASCII.GetByteCount(value);
+                return $"Road Naming: SetInput received. Value='{value}', HasUnicode={hasNonAscii}, Length={value.Length}.";
+            });
+            
             _toolSystem?.SetInputText(value);
         }
 

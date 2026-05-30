@@ -20,6 +20,7 @@ export function AdvancedRoadNamingContent(props: AdvancedRoadNamingContentProps)
     const { t } = useAdvancedRoadNamingLocalization();
 
     const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+        // Accept all characters - validation happens in C#
         panelActions.setInput(event.currentTarget.value);
     };
 

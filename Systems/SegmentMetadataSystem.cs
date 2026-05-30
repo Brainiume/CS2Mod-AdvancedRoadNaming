@@ -1519,11 +1519,20 @@ namespace AdvancedRoadNaming.Systems
                 return 0;
 
             var count = 0;
-            var tokens = Regex.Split(value.ToUpperInvariant(), "[^A-Z0-9-]+");
-            for (var i = 0; i < tokens.Length; i++)
+            try
             {
-                if (string.Equals(tokens[i], routeCode, System.StringComparison.OrdinalIgnoreCase))
-                    count++;
+                // Unicode-aware pattern: split on any non-letter, non-number, non-hyphen
+                var tokens = Regex.Split(value, @"[^\p{L}\p{N}\-]+");
+                for (var i = 0; i < tokens.Length; i++)
+                {
+                    if (string.Equals(tokens[i], routeCode, System.StringComparison.OrdinalIgnoreCase))
+                        count++;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Mod.log.Warn(() => $"Road Naming: Unicode regex processing failed on value '{value}'. Error: {ex.Message}");
+                return 0;
             }
 
             return count;
@@ -1539,8 +1548,22 @@ namespace AdvancedRoadNaming.Systems
             if (!_routeCodeService.TryNormalize(route.BaseInputValue, out var routeCode, out _))
                 return sanitized;
 
-            sanitized = Regex.Replace(sanitized, "(\\s*-\\s*" + Regex.Escape(routeCode) + ")+$", string.Empty, RegexOptions.IgnoreCase).Trim();
-            sanitized = Regex.Replace(sanitized, "\\s{2,}", " ").Trim();
+            try
+            {
+                // Unicode-aware regex patterns
+                sanitized = Regex.Replace(
+                    sanitized, 
+                    @"(\s*-\s*" + Regex.Escape(routeCode) + @")+$", 
+                    string.Empty, 
+                    RegexOptions.IgnoreCase
+                ).Trim();
+                sanitized = Regex.Replace(sanitized, @"\s{2,}", " ").Trim();
+            }
+            catch (System.Exception ex)
+            {
+                Mod.log.Warn(() => $"Road Naming: Unicode sanitization failed. Error: {ex.Message}");
+            }
+
             return sanitized;
         }
 
