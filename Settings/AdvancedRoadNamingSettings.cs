@@ -3,6 +3,8 @@ using Game.Modding;
 using Game.Settings;
 using Game.UI.Widgets;
 using AdvancedRoadNaming.Domain;
+using AdvancedRoadNaming.Systems;
+using Unity.Entities;
 
 namespace AdvancedRoadNaming.Settings
 {
@@ -45,8 +47,33 @@ namespace AdvancedRoadNaming.Settings
         [SettingsUISection(GeneralTab, AdvancedGroup)]
         public bool EnableLogging { get; set; }
 
+        [SettingsUISection(GeneralTab, AdvancedGroup)]
+        public bool CombineRoadAggregates { get; set; }
+
+        [SettingsUIHidden]
+        public bool CombineRoadAggregatesDefaultMigrated { get; set; }
+
         [SettingsUISection(GeneralTab, AboutGroup)]
         public string Version => Mod.Instance?.Version ?? string.Empty;
+
+        [SettingsUISection(GeneralTab, ResetGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation]
+        public bool RemoveRoadRouteModeData
+        {
+            set
+            {
+                var metadataSystem = World.DefaultGameObjectInjectionWorld?.GetOrCreateSystemManaged<SegmentMetadataSystem>();
+                if (metadataSystem == null)
+                {
+                    Mod.log.Warn("Road Naming: ROAD ROUTE data cleanup could not run because SegmentMetadataSystem is unavailable.");
+                    return;
+                }
+
+                metadataSystem.RemoveAllRoadRouteModeData(out var message);
+                Mod.log.Info(message);
+            }
+        }
 
         [SettingsUISection(GeneralTab, ResetGroup)]
         [SettingsUIButton]
@@ -67,6 +94,19 @@ namespace AdvancedRoadNaming.Settings
             AllowMultipleRouteNumbers = true;
             OrderingMode = RouteNumberOrderingMode.InsertionOrder;
             EnableLogging = false;
+            CombineRoadAggregates = true;
+            CombineRoadAggregatesDefaultMigrated = false;
+        }
+
+        public void EnsureCombineRoadAggregatesDefaultEnabled()
+        {
+            if (CombineRoadAggregatesDefaultMigrated)
+                return;
+
+            CombineRoadAggregates = true;
+            CombineRoadAggregatesDefaultMigrated = true;
+            ApplyAndSave();
+            Mod.log.Info("Road Naming: Combine Road Aggregates was enabled by default migration.");
         }
 
         public DropdownItem<RouteNumberOrderingMode>[] GetOrderingModeOptions()

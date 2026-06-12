@@ -78,6 +78,11 @@ namespace AdvancedRoadNaming.Services
             return false;
         }
 
+        public int DeleteByMode(RoadRouteToolMode mode)
+        {
+            return _routes.RemoveAll(route => route != null && route.Mode == mode);
+        }
+
         public bool Rename(long routeId, string title)
         {
             if (!TryGet(routeId, out var route) || string.IsNullOrWhiteSpace(title))

@@ -49,7 +49,7 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.3" />
+	<ModVersion Value="0.1.5" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.5.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -58,8 +58,8 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-			   - Fixed game crash upon deleting mod renamed roads with bulldozer tool
-			   
+			   - New Combine Aggregates Feature: Combines a renamed road into one continuous aggregate
+			   - Improved renamed road aggregate persistance
 			   " />
 	<!--<ChangeLog>
 	</ChangeLog>-->

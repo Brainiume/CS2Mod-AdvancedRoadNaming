@@ -41,6 +41,8 @@ namespace AdvancedRoadNaming.L10N
 
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Enable Debug Logging" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Write verbose diagnostic logs for Advanced Road Naming. Leave this unchecked during normal play." },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.CombineRoadAggregates)), "Combine Road Aggregates" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.CombineRoadAggregates)), "Combine and protect contiguous compatible road aggregates created by rename and numbered route operations." },
 
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.Version)), "Version" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.Version)), "Installed Advanced Road Naming version." },
@@ -48,6 +50,9 @@ namespace AdvancedRoadNaming.L10N
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.ResetGeneralSettings)), "Reset General Settings" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.ResetGeneralSettings)), "Restore all Advanced Road Naming settings to their default values." },
                     { _settings.GetOptionWarningLocaleID(nameof(AdvancedRoadNamingSettings.ResetGeneralSettings)), "Reset all Advanced Road Naming settings to defaults?" },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.RemoveRoadRouteModeData)), "Remove ROAD ROUTE Mode Data" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.RemoveRoadRouteModeData)), "Remove saved route-number records and route-number metadata from roads in the current save. Road-name rename data is preserved." },
+                    { _settings.GetOptionWarningLocaleID(nameof(AdvancedRoadNamingSettings.RemoveRoadRouteModeData)), "Remove all ROAD ROUTE mode data from roads in the current save? Save the game afterwards to persist this cleanup." },
 
                     { UIKeys.ClosePanelTooltip, "Close the Advanced Road Naming panel." },
                     { UIKeys.RenameToolClickAddWaypointTooltip, "Click to add waypoint" },
