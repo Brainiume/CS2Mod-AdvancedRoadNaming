@@ -5,6 +5,7 @@ import { DelayedTooltip } from "components/DelayedTooltip";
 import {
     advancedRoadNamingPanelKind$,
     advancedRoadNamingPanelOpen$,
+    advancedRoadRoutesScreen$,
     closeAdvancedRoadNamingPanel,
 } from "bindings";
 import { usePanelState } from "hooks/usePanelState";
@@ -18,6 +19,8 @@ import {
 } from "./selectedInfoPanelStyles";
 import { AdvancedRoadNamingContent } from "./AdvancedRoadNamingContent";
 import { AdvancedRoadRoutesContent } from "./AdvancedRoadRoutesContent";
+import { AdvancedRoadRoutesMenu } from "./AdvancedRoadRoutesMenu";
+import { ManageRoutesContent } from "./ManageRoutesContent";
 import styles from "./advancedRoadPanelShell.module.scss";
 
 interface SelectedInfoAdjacentPanelProps {
@@ -30,6 +33,7 @@ interface SelectedInfoAdjacentPanelProps {
 export function AdvancedRoadNamingPanel() {
     const visible = useValue(advancedRoadNamingPanelOpen$);
     const panelKind = useValue(advancedRoadNamingPanelKind$);
+    const routeScreen = useValue(advancedRoadRoutesScreen$);
     const state = usePanelState();
 
     useEffect(() => {
@@ -63,7 +67,17 @@ export function AdvancedRoadNamingPanel() {
             icon={isRoutePanel ? "coui://rst/Route.svg" : "coui://rst/PencilEdit.svg"}
             visible={visible}
         >
-            {isRoutePanel ? (
+            {isRoutePanel && routeScreen === "menu" ? (
+                <AdvancedRoadRoutesMenu />
+            ) : isRoutePanel && routeScreen === "manageRoutes" ? (
+                <ManageRoutesContent
+                    routes={state.savedRoutes}
+                    selectedRouteId={state.selectedSavedRouteId}
+                    manipulateMode={state.savedRouteManipulateMode}
+                    reviewRouteId={state.savedRouteReviewRouteId}
+                    showAdvancedRouteDetails={state.showAdvancedRouteDetails}
+                />
+            ) : isRoutePanel ? (
                 <AdvancedRoadRoutesContent
                     input={state.input}
                     routeNumberPlacement={state.routeNumberPlacement}

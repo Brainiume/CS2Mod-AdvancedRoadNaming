@@ -49,7 +49,7 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.5" />
+	<ModVersion Value="0.1.6.1" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.5.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -58,9 +58,26 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-			   - New Combine Aggregates Feature: Combines a renamed road into one continuous aggregate
-			   - Improved renamed road aggregate persistance
-			   " />
+		Road Routes
+		
+		*   New Manage Routes menu, allows for viewing of saved all road routes.
+		*   Routes can now be configured, manipulated and deleted.
+		*   Saved routes can now be selected from the list or visually in the world
+		*   Added setting to show or hide advanced route details.
+		
+		Fixes
+		
+		*   Fixed roads sometimes losing names or showing invisible names after renaming.
+		*   Fixed route names reverting after loading saves or restarting the game.
+		*   Fixed issues where renamed route roads could conflict with vanilla road naming.
+		*   Fixed route-numbered roads sometimes showing duplicate names.
+		*   A road aggregate that loses its name (becomes invisible) can now be restored / repaired using the rename mode.
+		*   Various mod performance improvements
+		
+		Known Issues
+		
+		*   Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
+	" />
 	<!--<ChangeLog>
 	</ChangeLog>-->
 	<!--External link, can be set multiple times. supported types are "discord", "github", "youtube", "twitch", "x", "paypal", "patreon", "buymeacoffee", "kofi", "crowdin", "gitlab", "gofundme"-->

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 using Colossal.Serialization.Entities;
 using Game;
@@ -38,6 +39,8 @@ namespace AdvancedRoadNaming.Systems
         private readonly List<AggregateSplitStabilityCheck> _aggregateStabilityChecks = new List<AggregateSplitStabilityCheck>();
         private readonly List<ProtectedModAggregateGroup> _protectedModAggregateGroups = new List<ProtectedModAggregateGroup>();
         private readonly HashSet<int> _pendingProtectedModAggregateValidation = new HashSet<int>();
+        private readonly HashSet<Entity> _loggedExpandedAggregateMembership = new HashSet<Entity>();
+        private EntityQuery _managedAggregateQuery;
         private int _nextProtectedModAggregateGroupId = 1;
         private bool _pendingPostLoadNameReapply;
         private int _pendingPostLoadNameReapplyDelayTicks;
@@ -66,7 +69,8 @@ namespace AdvancedRoadNaming.Systems
             _routeDatabase = new RouteDatabaseService();
             _nameSystem = World.GetOrCreateSystemManaged<NameSystem>();
             _aggregatedRoadEdgeQuery = GetEntityQuery(ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Road>(), ComponentType.ReadOnly<Aggregated>());
-            _applyService = new RouteApplyService(_repository, _validation, _resolver, _routeCodeService, GetBaseName, SetSegmentDisplayName, message => Mod.log.Info(message));
+            _managedAggregateQuery = GetEntityQuery(ComponentType.ReadOnly<AdvancedRoadNamingManagedAggregate>(), ComponentType.ReadOnly<AggregateElement>());
+            _applyService = new RouteApplyService(_repository, _validation, _resolver, _routeCodeService, GetBaseName, message => Mod.log.Info(message));
             Mod.log.Info("SegmentMetadataSystem created");
         }
 
@@ -82,6 +86,7 @@ namespace AdvancedRoadNaming.Systems
             ProcessDeferredPostLoadNameReapply();
             UpdateAggregateStabilityChecks();
             ValidatePendingProtectedModAggregates();
+            CleanupEmptyManagedAggregates();
         }
 
         private bool IsSafeForLiveAggregateMaintenance()
@@ -165,6 +170,8 @@ namespace AdvancedRoadNaming.Systems
         {
             if (selectedSegments == null || selectedSegments.Count == 0)
                 return;
+
+            RepairMissingAggregateOwnersForSelection(selectedSegments, operation);
 
             var settings = CurrentDisplaySettings();
             var selectedSet = new HashSet<Entity>();
@@ -598,6 +605,7 @@ namespace AdvancedRoadNaming.Systems
             }
 
             EntityManager.GetBuffer<AggregateElement>(clone).Clear();
+            MarkManagedAggregate(clone);
             InvalidateAggregateLabelState(clone);
             EnsureRefreshTag<Updated>(clone);
             EnsureRefreshTag<BatchesUpdated>(clone);
@@ -605,11 +613,147 @@ namespace AdvancedRoadNaming.Systems
             return clone;
         }
 
+        // Restores an aggregate owner for road edges that can hold a name but no longer
+        // have the vanilla label-bearing aggregate entity.
+        private void RepairMissingAggregateOwnersForSelection(IReadOnlyList<Entity> selectedSegments, string operation)
+        {
+            var groups = BuildMissingAggregateRepairGroups(selectedSegments);
+            if (groups.Count == 0)
+                return;
+
+            var repairedGroups = 0;
+            var repairedEdges = 0;
+            for (var i = 0; i < groups.Count; i++)
+            {
+                var group = groups[i];
+                if (TryCreateManagedAggregateForEdges(group.Segments, group.Prefab, operation, "MissingAggregateRepair"))
+                {
+                    repairedGroups++;
+                    repairedEdges += group.Segments.Count;
+                }
+            }
+
+            Mod.log.Info(() => $"Road Naming: missing aggregate repair completed. Operation={operation}, CandidateGroups={groups.Count}, RepairedGroups={repairedGroups}, RepairedEdges={repairedEdges}.");
+        }
+
+        private List<RenameAggregateGroup> BuildMissingAggregateRepairGroups(IReadOnlyList<Entity> selectedSegments)
+        {
+            var groups = new List<RenameAggregateGroup>();
+            RenameAggregateGroup current = null;
+            Entity previousSegment = Entity.Null;
+
+            if (selectedSegments == null)
+                return groups;
+
+            for (var i = 0; i < selectedSegments.Count; i++)
+            {
+                var segment = selectedSegments[i];
+                if (!_validation.IsValidRoadSegment(segment)
+                    || HasValidAggregateOwner(segment)
+                    || !TryGetAggregatePrefabFromRoadSegment(segment, out var prefab)
+                    || !TryResolveFinalNameForSegment(segment, out var finalName))
+                {
+                    current = null;
+                    previousSegment = Entity.Null;
+                    continue;
+                }
+
+                var connectedToPrevious = previousSegment != Entity.Null && Pathing.AreConnected(previousSegment, segment);
+                if (current == null || current.Prefab != prefab || !connectedToPrevious || !string.Equals(current.FinalName, finalName, System.StringComparison.Ordinal))
+                {
+                    current = new RenameAggregateGroup { Prefab = prefab, FinalName = finalName };
+                    groups.Add(current);
+                }
+
+                AddEntityIfMissing(current.Segments, segment);
+                previousSegment = segment;
+            }
+
+            return groups;
+        }
+
+        private bool HasValidAggregateOwner(Entity segment)
+        {
+            if (segment == Entity.Null || !EntityManager.Exists(segment) || !EntityManager.HasComponent<Aggregated>(segment))
+                return false;
+
+            var owner = EntityManager.GetComponentData<Aggregated>(segment).m_Aggregate;
+            return IsValidRoadAggregateOwner(owner);
+        }
+
+        private bool TryGetAggregatePrefabFromRoadSegment(Entity segment, out Entity prefab)
+        {
+            prefab = Entity.Null;
+            if (!_validation.IsValidRoadSegment(segment) || !EntityManager.HasComponent<PrefabRef>(segment))
+                return false;
+
+            var roadPrefab = EntityManager.GetComponentData<PrefabRef>(segment).m_Prefab;
+            if (roadPrefab == Entity.Null || !EntityManager.Exists(roadPrefab) || !EntityManager.HasComponent<NetGeometryData>(roadPrefab))
+                return false;
+
+            var candidate = EntityManager.GetComponentData<NetGeometryData>(roadPrefab).m_AggregateType;
+            if (candidate == Entity.Null || !EntityManager.Exists(candidate) || !EntityManager.HasComponent<AggregateNetData>(candidate))
+                return false;
+
+            prefab = candidate;
+            return true;
+        }
+
+        private bool TryCreateManagedAggregateForEdges(IReadOnlyList<Entity> edges, Entity aggregatePrefab, string operation, string role)
+        {
+            if (edges == null || edges.Count == 0 || aggregatePrefab == Entity.Null || !EntityManager.Exists(aggregatePrefab) || !EntityManager.HasComponent<AggregateNetData>(aggregatePrefab))
+                return false;
+
+            Entity aggregate;
+            try
+            {
+                var aggregateData = EntityManager.GetComponentData<AggregateNetData>(aggregatePrefab);
+                aggregate = EntityManager.CreateEntity(aggregateData.m_Archetype);
+            }
+            catch (System.Exception ex)
+            {
+                Mod.log.Warn(() => $"Road Naming: missing aggregate repair could not create aggregate owner. Operation={operation}, Role={role}, Prefab={aggregatePrefab.Index}, Error={ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+
+            if (aggregate == Entity.Null || !EntityManager.Exists(aggregate) || !EntityManager.HasBuffer<AggregateElement>(aggregate))
+            {
+                if (aggregate != Entity.Null && EntityManager.Exists(aggregate))
+                    EntityManager.DestroyEntity(aggregate);
+
+                Mod.log.Warn(() => $"Road Naming: missing aggregate repair created unusable aggregate owner. Operation={operation}, Role={role}, Prefab={aggregatePrefab.Index}, Aggregate={aggregate.Index}.");
+                return false;
+            }
+
+            var prefabRef = new PrefabRef { m_Prefab = aggregatePrefab };
+            if (EntityManager.HasComponent<PrefabRef>(aggregate))
+                EntityManager.SetComponentData(aggregate, prefabRef);
+            else
+                EntityManager.AddComponentData(aggregate, prefabRef);
+
+            var validEdges = new List<Entity>();
+            for (var i = 0; i < edges.Count; i++)
+            {
+                if (_validation.IsValidRoadSegment(edges[i]))
+                    AddEntityIfMissing(validEdges, edges[i]);
+            }
+
+            if (validEdges.Count == 0)
+            {
+                EntityManager.DestroyEntity(aggregate);
+                return false;
+            }
+
+            MarkManagedAggregate(aggregate);
+            AssignAggregateEdges(aggregate, validEdges, operation, role);
+            Mod.log.Info(() => $"Road Naming: missing aggregate owner restored. Operation={operation}, Role={role}, Aggregate={aggregate.Index}, Prefab={aggregatePrefab.Index}, Edges={validEdges.Count}.");
+            return true;
+        }
+
         // Reassigns the given road edges to the supplied aggregate owner,
         // then tags things for a visual refresh without touching vanilla too hard.
         private void AssignAggregateEdges(Entity aggregate, List<Entity> edges, string operation, string role)
         {
-            UnmarkManagedAggregate(aggregate);
             var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate);
             buffer.Clear();
             for (var i = 0; i < edges.Count; i++)
@@ -624,7 +768,6 @@ namespace AdvancedRoadNaming.Systems
                 else
                     EntityManager.AddComponentData(edge, new Aggregated { m_Aggregate = aggregate });
 
-                UnmarkManagedAggregateEdge(edge);
                 EnsureRefreshTag<BatchesUpdated>(edge);
                 Mod.log.Info(() => $"Road Naming: aggregate edge assignment. Operation={operation}, Role={role}, Edge={edge.Index}, Aggregate={aggregate.Index}, EdgeUpdatedTagSkipped=True.");
             }
@@ -634,16 +777,10 @@ namespace AdvancedRoadNaming.Systems
             EnsureRefreshTag<BatchesUpdated>(aggregate);
         }
 
-        private void UnmarkManagedAggregate(Entity aggregate)
+        private void MarkManagedAggregate(Entity aggregate)
         {
-            if (aggregate != Entity.Null && EntityManager.Exists(aggregate) && EntityManager.HasComponent<AdvancedRoadNamingManagedAggregate>(aggregate))
-                EntityManager.RemoveComponent<AdvancedRoadNamingManagedAggregate>(aggregate);
-        }
-
-        private void UnmarkManagedAggregateEdge(Entity edge)
-        {
-            if (edge != Entity.Null && EntityManager.Exists(edge) && EntityManager.HasComponent<AdvancedRoadNamingAggregateMember>(edge))
-                EntityManager.RemoveComponent<AdvancedRoadNamingAggregateMember>(edge);
+            if (aggregate != Entity.Null && EntityManager.Exists(aggregate) && !EntityManager.HasComponent<AdvancedRoadNamingManagedAggregate>(aggregate))
+                EntityManager.AddComponent<AdvancedRoadNamingManagedAggregate>(aggregate);
         }
 
         // Breaks a set of edges into connected chunks so each isolated bit
@@ -782,7 +919,7 @@ namespace AdvancedRoadNaming.Systems
                 candidates.Dispose();
             }
 
-            if (edges.Count != bufferEdgeCount)
+            if (Mod.IsVerboseLoggingEnabled && edges.Count != bufferEdgeCount && _loggedExpandedAggregateMembership.Add(nameEntity))
                 Mod.log.Info(() => $"Road Naming: aggregate membership expanded from reverse lookup. Aggregate={nameEntity.Index}, BufferEdges={bufferEdgeCount}, ResolvedEdges={edges.Count}.");
 
             return edges;
@@ -970,10 +1107,38 @@ namespace AdvancedRoadNaming.Systems
                 return;
 
             EntityManager.GetBuffer<AggregateElement>(aggregate).Clear();
+            MarkManagedAggregate(aggregate);
             InvalidateAggregateLabelState(aggregate);
             EnsureRefreshTag<Updated>(aggregate);
             EnsureRefreshTag<BatchesUpdated>(aggregate);
             Mod.log.Info(() => $"Road Naming: merged aggregate owner cleared. Operation={operation}, Aggregate={aggregate.Index}.");
+        }
+
+        private void CleanupEmptyManagedAggregates()
+        {
+            if (_managedAggregateQuery == null || _managedAggregateQuery.IsEmptyIgnoreFilter)
+                return;
+
+            var aggregates = _managedAggregateQuery.ToEntityArray(Allocator.Temp);
+            try
+            {
+                for (var i = 0; i < aggregates.Length; i++)
+                {
+                    var aggregate = aggregates[i];
+                    if (aggregate == Entity.Null || !EntityManager.Exists(aggregate) || !EntityManager.HasBuffer<AggregateElement>(aggregate))
+                        continue;
+
+                    if (EntityManager.GetBuffer<AggregateElement>(aggregate, true).Length != 0)
+                        continue;
+
+                    EntityManager.DestroyEntity(aggregate);
+                    Mod.log.Info(() => $"Road Naming: removed empty managed aggregate owner. Aggregate={aggregate.Index}.");
+                }
+            }
+            finally
+            {
+                aggregates.Dispose();
+            }
         }
 
         private bool VerifyCombinedAggregateOwnership(Entity targetAggregate, IReadOnlyList<Entity> groupSegments, string finalName, string operation)
@@ -1503,6 +1668,7 @@ namespace AdvancedRoadNaming.Systems
                     var edge = elements[i].m_Edge;
                     if (EntityManager.Exists(edge))
                     {
+                        ClearChildEdgeCustomName(nameEntity, edge);
                         // BatchesUpdated refreshes label/render batches without feeding AggregateSystem an Updated edge.
                         EnsureRefreshTag<BatchesUpdated>(edge);
                     }
@@ -1514,6 +1680,18 @@ namespace AdvancedRoadNaming.Systems
                 VerifyAuthoritativeNameOwner(nameEntity, safeName, operation, source, selectedCount, totalCount);
                 LogVisibleNameSource(nameEntity, operation, source);
             }
+        }
+
+        private void ClearChildEdgeCustomName(Entity nameEntity, Entity edge)
+        {
+            if (edge == Entity.Null || edge == nameEntity || !EntityManager.Exists(edge))
+                return;
+
+            if (_nameSystem.TryGetCustomName(edge, out _))
+                _nameSystem.SetCustomName(edge, null);
+
+            if (EntityManager.HasComponent<CustomName>(edge))
+                EnsureRefreshTag<BatchesUpdated>(edge);
         }
 
         // Logs what sort of entity currently owns the visible label and what label buffers it has.
@@ -1823,7 +2001,7 @@ namespace AdvancedRoadNaming.Systems
             var affectedSegments = FilterValidRouteSegments(route.OrderedSegmentIds);
             Mod.log.Info(() => $"Road Naming: route removal requested. RouteId={routeId}, Mode={route.Mode}, Input='{route.BaseInputValue}', StoredSegments={route.OrderedSegmentIds.Count}, ValidSegments={affectedSegments.Count}.");
 
-            if (!_routeDatabase.Delete(routeId))
+            if (!_routeDatabase.Delete(routeId, false))
             {
                 message = $"Saved route {routeId} could not be deleted.";
                 Mod.log.Warn(() => $"Road Naming: route delete failed during database removal. RouteId={routeId}.");
@@ -1831,6 +2009,7 @@ namespace AdvancedRoadNaming.Systems
             }
 
             var replayedRoutes = RebuildSegmentsAfterRouteDeletion(route, affectedSegments);
+            route.ClearStoredData();
             RebuildProtectedModAggregateGroupsFromModState();
             message = affectedSegments.Count > 0
                 ? $"Deleted saved route {routeId} and reverted {affectedSegments.Count} affected road segment(s)."
@@ -2493,8 +2672,6 @@ namespace AdvancedRoadNaming.Systems
                 if (!_validation.IsValidRoadSegment(segment) || !_repository.TryGet(segment, out var metadata))
                     continue;
 
-                var resolvedName = _resolver.Resolve(GetBaseName(segment), metadata, settings);
-                SetSegmentDisplayName(segment, resolvedName);
                 AddEntityIfMissing(appliedSegments, segment);
             }
 
@@ -2582,6 +2759,20 @@ namespace AdvancedRoadNaming.Systems
             return false;
         }
 
+        // Updates saved route placement intent. Reapply remains explicit so UI edits do not mutate roads immediately.
+        public bool UpdateSavedRoutePlacement(long routeId, RouteNumberPlacement placement, out string message)
+        {
+            if (_routeDatabase.UpdatePlacement(routeId, placement))
+            {
+                message = $"Updated saved route {routeId} placement.";
+                Mod.log.Info(() => $"Road Naming: route placement updated. RouteId={routeId}, Placement={placement}.");
+                return true;
+            }
+
+            message = $"Saved route {routeId} was not found.";
+            return false;
+        }
+
         // Intentionally blocked direct rebuild path.
         // The player has to go through preview/review first so nothing dodgy gets applied blind.
         public bool RebuildSavedRoute(long routeId, out string message)
@@ -2594,7 +2785,9 @@ namespace AdvancedRoadNaming.Systems
         // Builds the Saved Routes payload consumed by the UI panel.
         public string BuildSavedRoutesJson()
         {
-            var parts = new List<string>();
+            var builder = new StringBuilder();
+            builder.Append('[');
+            var appended = false;
             foreach (var route in _routeDatabase.Routes)
             {
                 if (route == null)
@@ -2607,7 +2800,8 @@ namespace AdvancedRoadNaming.Systems
                 {
                     EnsureRouteCorridorMetadata(route);
                     var status = EvaluateSavedRouteStatus(route).ToString();
-                    parts.Add("{" +
+                    AppendJsonSeparator(builder, ref appended);
+                    builder.Append("{" +
                         "\"id\":" + route.RouteId.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"title\":" + JsonString(BuildRouteDisplayTitle(route)) + "," +
                         "\"savedTitle\":" + JsonString(route.DisplayTitle) + "," +
@@ -2616,6 +2810,7 @@ namespace AdvancedRoadNaming.Systems
                         "\"input\":" + JsonString(route.BaseInputValue) + "," +
                         "\"routeCode\":" + JsonString(route.RouteCode ?? route.BaseInputValue) + "," +
                         "\"routePrefixType\":" + JsonString(route.RoutePrefixType) + "," +
+                        "\"routeNumberPlacement\":" + JsonString(route.RouteNumberPlacement.ToString()) + "," +
                         "\"segments\":" + route.SegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"waypoints\":" + route.WaypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"status\":" + JsonString(status) + "," +
@@ -2633,7 +2828,8 @@ namespace AdvancedRoadNaming.Systems
                 catch (System.Exception ex)
                 {
                     Mod.log.Warn(() => $"Road Naming: failed to serialize saved route {route.RouteId} for Saved Routes JSON. Error='{ex.Message}'.");
-                    parts.Add("{" +
+                    AppendJsonSeparator(builder, ref appended);
+                    builder.Append("{" +
                         "\"id\":" + route.RouteId.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"title\":" + JsonString(string.IsNullOrWhiteSpace(route.DisplayTitle) ? "Corrupt Saved Route" : route.DisplayTitle) + "," +
                         "\"savedTitle\":" + JsonString(route.DisplayTitle) + "," +
@@ -2642,6 +2838,7 @@ namespace AdvancedRoadNaming.Systems
                         "\"input\":" + JsonString(route.BaseInputValue) + "," +
                         "\"routeCode\":" + JsonString(route.RouteCode ?? route.BaseInputValue) + "," +
                         "\"routePrefixType\":" + JsonString(route.RoutePrefixType) + "," +
+                        "\"routeNumberPlacement\":" + JsonString(route.RouteNumberPlacement.ToString()) + "," +
                         "\"segments\":" + route.SegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"waypoints\":" + route.WaypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"status\":" + JsonString(SavedRouteStatus.PartiallyValid.ToString()) + "," +
@@ -2658,7 +2855,16 @@ namespace AdvancedRoadNaming.Systems
                 }
             }
 
-            return "[" + string.Join(",", parts.ToArray()) + "]";
+            builder.Append(']');
+            return builder.ToString();
+        }
+
+        private static void AppendJsonSeparator(StringBuilder builder, ref bool appended)
+        {
+            if (appended)
+                builder.Append(',');
+            else
+                appended = true;
         }
 
         // Filters a route's segment list down to valid, unique road edges.
@@ -3029,6 +3235,7 @@ namespace AdvancedRoadNaming.Systems
                 .Replace("\r", string.Empty)
                 .Replace("\n", " ") + "\"";
         }
+
         // Clears repository entries for segments that no longer exist in the world.
         public void CleanupOrphanedMetadata()
         {
@@ -3474,7 +3681,6 @@ namespace AdvancedRoadNaming.Systems
                     continue;
                 }
 
-                SetSegmentDisplayName(metadata.SegmentEntity, _resolver.Resolve(GetBaseName(metadata.SegmentEntity), metadata, settings));
                 segments.Add(metadata.SegmentEntity);
                 reapplied++;
             }

@@ -38,6 +38,8 @@ namespace AdvancedRoadNaming.L10N
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.OrderingMode)), "Choose whether route numbers keep the order they were applied or are sorted before display." },
                     { _settings.GetOrderingModeLocaleID(RouteNumberOrderingMode.InsertionOrder), "Insertion Order" },
                     { _settings.GetOrderingModeLocaleID(RouteNumberOrderingMode.Sorted), "Sorted" },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.ShowAdvancedRouteDetails)), "Show Advanced Route Details" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.ShowAdvancedRouteDetails)), "Append technical saved-route details to the Route Info foldout in Manage Routes." },
 
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Enable Debug Logging" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Write verbose diagnostic logs for Advanced Road Naming. Leave this unchecked during normal play." },

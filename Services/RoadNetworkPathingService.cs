@@ -6,8 +6,16 @@ namespace AdvancedRoadNaming.Services
 {
     public sealed class RoadNetworkPathingService
     {
+        private const int InitialPathQueueCapacity = 128;
+        private const int InitialPathMapCapacity = 256;
+
+        private static readonly IReadOnlyList<Entity> EmptyPath = new Entity[0];
+
         private readonly EntityManager _entityManager;
         private readonly SegmentValidationService _validation;
+        private readonly List<Entity> _queue = new List<Entity>(InitialPathQueueCapacity);
+        private readonly Dictionary<Entity, Entity> _previous = new Dictionary<Entity, Entity>(InitialPathMapCapacity);
+        private readonly Dictionary<Entity, int> _depth = new Dictionary<Entity, int>(InitialPathMapCapacity);
 
         public RoadNetworkPathingService(EntityManager entityManager, SegmentValidationService validation)
         {
@@ -31,74 +39,74 @@ namespace AdvancedRoadNaming.Services
 
         public IReadOnlyList<Entity> FindPath(Entity start, Entity target, int maxDepth)
         {
-            var empty = new List<Entity>();
             if (!_validation.IsValidRoadSegment(start) || !_validation.IsValidRoadSegment(target))
-                return empty;
+                return EmptyPath;
 
             if (start == target)
                 return new List<Entity> { start };
 
-            var queue = new List<Entity>();
-            var readIndex = 0;
-            var previous = new Dictionary<Entity, Entity>();
-            var depth = new Dictionary<Entity, int>();
+            _queue.Clear();
+            _previous.Clear();
+            _depth.Clear();
 
-            queue.Add(start);
-            previous[start] = Entity.Null;
-            depth[start] = 0;
-
-            while (readIndex < queue.Count)
+            try
             {
-                var current = queue[readIndex++];
-                if (depth[current] >= maxDepth)
-                    continue;
+                var readIndex = 0;
+                _queue.Add(start);
+                _previous[start] = Entity.Null;
+                _depth[start] = 0;
 
-                foreach (var neighbor in GetNeighborRoadSegments(current))
+                while (readIndex < _queue.Count)
                 {
-                    if (previous.ContainsKey(neighbor))
+                    var current = _queue[readIndex++];
+                    var currentDepth = _depth[current];
+                    if (currentDepth >= maxDepth)
                         continue;
 
-                    previous[neighbor] = current;
-                    depth[neighbor] = depth[current] + 1;
+                    var edge = _entityManager.GetComponentData<Edge>(current);
+                    var nextDepth = currentDepth + 1;
 
-                    if (neighbor == target)
-                        return ReconstructPath(previous, target);
+                    var path = TryVisitNodeNeighbors(edge.m_Start, current, target, nextDepth);
+                    if (path != null)
+                        return path;
 
-                    queue.Add(neighbor);
+                    path = TryVisitNodeNeighbors(edge.m_End, current, target, nextDepth);
+                    if (path != null)
+                        return path;
                 }
+
+                return EmptyPath;
             }
-
-            return empty;
-        }
-
-        private IEnumerable<Entity> GetNeighborRoadSegments(Entity segment)
-        {
-            var edge = _entityManager.GetComponentData<Edge>(segment);
-            foreach (var neighbor in GetSegmentsFromNode(edge.m_Start))
+            finally
             {
-                if (neighbor != segment)
-                    yield return neighbor;
-            }
-
-            foreach (var neighbor in GetSegmentsFromNode(edge.m_End))
-            {
-                if (neighbor != segment)
-                    yield return neighbor;
+                _queue.Clear();
+                _previous.Clear();
+                _depth.Clear();
             }
         }
 
-        private IEnumerable<Entity> GetSegmentsFromNode(Entity node)
+        private IReadOnlyList<Entity> TryVisitNodeNeighbors(Entity node, Entity current, Entity target, int nextDepth)
         {
             if (node == Entity.Null || !_entityManager.Exists(node) || !_entityManager.HasBuffer<ConnectedEdge>(node))
-                yield break;
+                return null;
 
             var connectedEdges = _entityManager.GetBuffer<ConnectedEdge>(node);
             for (var i = 0; i < connectedEdges.Length; i++)
             {
-                var edge = connectedEdges[i].m_Edge;
-                if (_validation.IsValidRoadSegment(edge))
-                    yield return edge;
+                var neighbor = connectedEdges[i].m_Edge;
+                if (neighbor == current || !_validation.IsValidRoadSegment(neighbor) || _previous.ContainsKey(neighbor))
+                    continue;
+
+                _previous[neighbor] = current;
+                _depth[neighbor] = nextDepth;
+
+                if (neighbor == target)
+                    return ReconstructPath(_previous, target);
+
+                _queue.Add(neighbor);
             }
+
+            return null;
         }
 
         private static IReadOnlyList<Entity> ReconstructPath(Dictionary<Entity, Entity> previous, Entity target)

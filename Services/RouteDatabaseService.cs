@@ -22,6 +22,9 @@ namespace AdvancedRoadNaming.Services
 
         public void Clear()
         {
+            for (var i = 0; i < _routes.Count; i++)
+                _routes[i]?.ClearStoredData();
+
             _routes.Clear();
             _nextRouteId = 1;
         }
@@ -64,12 +67,15 @@ namespace AdvancedRoadNaming.Services
             return false;
         }
 
-        public bool Delete(long routeId)
+        public bool Delete(long routeId, bool clearStoredData = true)
         {
             for (var i = 0; i < _routes.Count; i++)
             {
                 if (_routes[i].RouteId == routeId)
                 {
+                    if (clearStoredData)
+                        _routes[i].ClearStoredData();
+
                     _routes.RemoveAt(i);
                     return true;
                 }
@@ -80,7 +86,19 @@ namespace AdvancedRoadNaming.Services
 
         public int DeleteByMode(RoadRouteToolMode mode)
         {
-            return _routes.RemoveAll(route => route != null && route.Mode == mode);
+            var removed = 0;
+            for (var i = _routes.Count - 1; i >= 0; i--)
+            {
+                var route = _routes[i];
+                if (route == null || route.Mode != mode)
+                    continue;
+
+                route.ClearStoredData();
+                _routes.RemoveAt(i);
+                removed++;
+            }
+
+            return removed;
         }
 
         public bool Rename(long routeId, string title)
@@ -102,6 +120,16 @@ namespace AdvancedRoadNaming.Services
             route.BaseInputValue = inputValue?.Trim() ?? string.Empty;
             route.RouteCode = route.BaseInputValue;
             route.RoutePrefixType = ResolveRoutePrefixType(route.BaseInputValue);
+            route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            return true;
+        }
+
+        public bool UpdatePlacement(long routeId, RouteNumberPlacement placement)
+        {
+            if (!TryGet(routeId, out var route))
+                return false;
+
+            route.RouteNumberPlacement = placement;
             route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
             return true;
         }

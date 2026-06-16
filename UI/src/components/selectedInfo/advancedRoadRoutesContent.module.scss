@@ -1,7 +1,12 @@
 .content {
     display: flex;
     flex-direction: column;
-    padding: 0 32rem 28rem;
+    padding: 0 32rem 18rem;
+}
+
+.menuContent {
+    min-height: 190rem;
+    padding-bottom: 18rem;
 }
 
 .wipNotice {
@@ -50,6 +55,227 @@
     height: 1rem;
     margin: 0 -16rem;
     background-color: rgba(255, 255, 255, 0.08);
+}
+
+.routeMenuCards {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+    margin-top: 18rem;
+}
+
+.routeMenuCard {
+    flex: 0 0 142rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 142rem;
+    height: 120rem;
+    min-height: 120rem;
+    max-height: 120rem;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 5rem;
+    color: rgba(255, 255, 255, 0.94);
+    background-color: rgba(4, 14, 22, 0.68);
+    text-align: center;
+}
+
+.routeMenuCardInner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+
+.routeMenuCard + .routeMenuCard {
+    margin-left: 12rem;
+}
+
+.routeMenuCard:hover {
+    color: #fff;
+    background-color: rgba(12, 26, 34, 0.9);
+}
+
+.routeMenuIcon {
+    width: 54rem;
+    height: 54rem;
+    margin: 0 0 12rem;
+}
+
+.routeMenuLabel {
+    width: 100%;
+    padding: 0 8rem;
+    box-sizing: border-box;
+    font-size: var(--fontSizeM);
+    font-weight: 700;
+    line-height: 22rem;
+    text-align: center;
+    white-space: normal;
+}
+
+.manageContent {
+    padding-right: 18rem;
+    padding-left: 18rem;
+}
+
+.manageHeader {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 10rem 0 8rem;
+}
+
+.smallActionButton {
+    flex: 0 0 72rem;
+    width: 72rem;
+    height: 28rem;
+    min-height: 28rem;
+    max-height: 28rem;
+    border: none;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(0, 0, 0, 0.72);
+    font-size: var(--fontSizeS);
+    line-height: 28rem;
+}
+
+.manageHint {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: 10rem;
+    color: rgba(255, 255, 255, 0.74);
+    font-size: var(--fontSizeS);
+    line-height: 18rem;
+}
+
+.manageBody {
+    display: flex;
+    flex-direction: column;
+}
+
+.routeList {
+    display: flex;
+    flex-direction: column;
+    max-height: 132rem;
+    overflow-y: auto;
+    margin-bottom: 8rem;
+}
+
+.routeListItem {
+    width: 100%;
+    min-height: 36rem;
+    padding: 7rem 9rem;
+    margin: 0 0 5rem;
+    box-sizing: border-box;
+    border: 1rem solid rgba(255, 255, 255, 0.08);
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.9);
+    background-color: rgba(4, 14, 22, 0.54);
+    text-align: left;
+    font-size: var(--fontSizeS);
+    line-height: 20rem;
+}
+
+.routeListItem:hover {
+    background-color: rgba(12, 26, 34, 0.82);
+}
+
+.routeListItemSelected {
+    border-color: rgba(67, 202, 247, 0.78);
+    background-color: rgba(0, 120, 191, 0.38);
+}
+
+.routeListTitle {
+    overflow: hidden;
+    font-size: var(--fontSizeS);
+    font-weight: 700;
+    line-height: 18rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.routeListMeta {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: var(--fontSizeXS);
+    line-height: 16rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.selectedRouteSummary {
+    display: flex;
+    flex-direction: column;
+    margin: 4rem 0 0;
+}
+
+.selectedRouteTitle {
+    padding: 8rem 10rem;
+    margin-bottom: 6rem;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.96);
+    background-color: rgba(4, 14, 22, 0.42);
+    font-size: var(--fontSizeM);
+    line-height: 22rem;
+}
+
+.selectedRouteSummary .routeFoldouts {
+    margin: 0;
+    padding: 0;
+}
+
+.selectedRouteSummary .routePanelRow {
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+}
+
+.routeDetails {
+    min-height: 160rem;
+    margin: 0 -18rem;
+}
+
+.noSelection {
+    padding: 24rem 18rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: var(--fontSizeS);
+    line-height: 20rem;
+    text-align: center;
+}
+
+.manageContent .actions {
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-top: 10rem;
+    padding-bottom: 8rem;
+}
+
+.manageContent .actionButtonCell {
+    flex: 0 0 84rem;
+    min-width: 84rem;
+    max-width: 84rem;
+    margin: 3rem;
+}
+
+.manageContent .actionButton {
+    flex: 0 0 84rem;
+    width: 84rem;
+    min-width: 84rem;
+    max-width: 84rem;
+    font-size: var(--fontSizeXS);
+}
+
+.statusLine {
+    min-height: 18rem;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: var(--fontSizeXS);
+    line-height: 18rem;
+    text-align: center;
 }
 
 .routeFoldouts {
@@ -266,6 +492,11 @@
 .actionButton:hover {
     color: #fff;
     background-color: rgba(12, 26, 34, 0.9);
+}
+
+.actionButton.activeActionButton {
+    color: #fff;
+    background-color: rgba(56, 128, 170, 0.9);
 }
 
 .actionButton:disabled {

@@ -16,6 +16,11 @@ const DEFAULT_STATE: PanelState = {
     savedRoutes: [],
     routeNumberPlacement: "AfterBaseName",
     undergroundMode: false,
+    selectedSavedRouteId: 0,
+    savedRoutesViewActive: false,
+    savedRouteManipulateMode: false,
+    savedRouteReviewRouteId: 0,
+    showAdvancedRouteDetails: false,
 };
 
 const MODES: Record<string, RouteToolMode> = {
@@ -89,6 +94,11 @@ export function parsePanelState(raw: string): PanelState {
         savedRoutes: parseSavedRoutes(parts[9] ?? "[]"),
         routeNumberPlacement: parts[10] === "BeforeBaseName" ? "BeforeBaseName" : "AfterBaseName",
         undergroundMode: parts[11] === "1",
+        selectedSavedRouteId: toNumber(parts[12] ?? "0"),
+        savedRoutesViewActive: parts[13] === "1",
+        savedRouteManipulateMode: parts[14] === "1",
+        savedRouteReviewRouteId: toNumber(parts[15] ?? "0"),
+        showAdvancedRouteDetails: parts[16] === "1",
     };
 }
 

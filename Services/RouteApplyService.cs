@@ -12,7 +12,6 @@ namespace AdvancedRoadNaming.Services
         private readonly SegmentDisplayNameResolver _resolver;
         private readonly RouteCodeService _routeCodeService;
         private readonly Func<Entity, string> _baseNameProvider;
-        private readonly Action<Entity, string> _displayNameWriter;
         private readonly Action<string> _logInfo;
 
         public RouteApplyService(
@@ -21,7 +20,6 @@ namespace AdvancedRoadNaming.Services
             SegmentDisplayNameResolver resolver,
             RouteCodeService routeCodeService,
             Func<Entity, string> baseNameProvider,
-            Action<Entity, string> displayNameWriter,
             Action<string> logInfo)
         {
             _repository = repository;
@@ -29,7 +27,6 @@ namespace AdvancedRoadNaming.Services
             _resolver = resolver;
             _routeCodeService = routeCodeService;
             _baseNameProvider = baseNameProvider;
-            _displayNameWriter = displayNameWriter;
             _logInfo = logInfo;
         }
 
@@ -55,10 +52,9 @@ namespace AdvancedRoadNaming.Services
 
                 var metadata = _repository.GetOrCreate(segment);
                 EnsureBaseSnapshot(segment, metadata);
-                metadata.BaseNameSnapshot = newRoadName.Trim();
                 metadata.OptionalCustomRoadName = newRoadName.Trim();
                 metadata.Touch();
-                WriteResolvedName(segment, metadata, settings);
+                LogResolvedName(segment, metadata, settings);
                 count++;
             }
 
@@ -93,7 +89,7 @@ namespace AdvancedRoadNaming.Services
 
                 metadata.RouteNumberPlacement = placement;
                 metadata.Touch();
-                WriteResolvedName(segment, metadata, settings);
+                LogResolvedName(segment, metadata, settings);
                 visited++;
             }
 
@@ -108,13 +104,12 @@ namespace AdvancedRoadNaming.Services
                 metadata.BaseNameSnapshot = _baseNameProvider(segment);
         }
 
-        private void WriteResolvedName(Entity segment, SegmentRouteMetadata metadata, SegmentDisplaySettings settings)
+        private void LogResolvedName(Entity segment, SegmentRouteMetadata metadata, SegmentDisplaySettings settings)
         {
             var gameStreetName = _baseNameProvider(segment);
             var resolvedName = _resolver.Resolve(gameStreetName, metadata, settings);
             var routeCodes = metadata.RouteNumbers.Count == 0 ? string.Empty : string.Join(settings.RouteNumberSeparator, metadata.RouteNumbers.ToArray());
             _logInfo($"Segment={segment.Index}, GameStreetName=\'{gameStreetName ?? string.Empty}\', CustomOverride=\'{metadata.OptionalCustomRoadName ?? string.Empty}\', RouteCodes=\'{routeCodes}\', FinalRendered=\'{resolvedName}\'");
-            _displayNameWriter(segment, resolvedName);
         }
     }
 }

@@ -1,9 +1,7 @@
-import { trigger } from "cs2/api";
 import { FOCUS_AUTO, FocusDisabled } from "cs2/input";
 import { getModule } from "cs2/modding";
 import { ButtonProps, PanelSection, PanelSectionRow } from "cs2/ui";
 import { openAdvancedRoadNamingPanel, openAdvancedRoadRoutesPanel } from "bindings";
-import { NATIVE_GROUP } from "constants";
 import { useAdvancedRoadNamingLocalization } from "localization";
 import styles from "./roadSelectionInfoSection.module.scss";
 
@@ -32,10 +30,6 @@ export const extendRoadSelectionInfoSection = (componentList: Record<string, any
 function RoadSelectionInfoSection(props: RoadSelectionInfoSectionProps) {
     const { t } = useAdvancedRoadNamingLocalization();
 
-    const click = (action: "roadName" | "routeNumber") => {
-        trigger(NATIVE_GROUP, "SelectedRoadInfoButtonClicked", action);
-    };
-
     return (
         <>
             <PanelSection>
@@ -58,10 +52,7 @@ function RoadSelectionInfoSection(props: RoadSelectionInfoSectionProps) {
                                     focusKey={FOCUS_AUTO}
                                     src="coui://rst/Route.svg"
                                     tooltip={t("AdvancedRoadNaming.UI[AdvancedRoadRoutesTooltip]")}
-                                    onSelect={() => {
-                                        click("routeNumber");
-                                        openAdvancedRoadRoutesPanel();
-                                    }}
+                                    onSelect={openAdvancedRoadRoutesPanel}
                                 />
                             </div>
                         </FocusDisabled>

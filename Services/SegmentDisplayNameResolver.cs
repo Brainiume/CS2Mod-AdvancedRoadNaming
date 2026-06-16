@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using AdvancedRoadNaming.Domain;
 
 namespace AdvancedRoadNaming.Services
@@ -18,7 +17,10 @@ namespace AdvancedRoadNaming.Services
                     ? metadata.BaseNameSnapshot.Trim()
                     : SafeBaseName(gameOrGeneratedBaseName);
 
-            var routeNumbers = GetOrderedRouteNumbers(metadata.RouteNumbers, settings).ToList();
+            if (metadata.RouteNumbers == null || metadata.RouteNumbers.Count == 0)
+                return baseName;
+
+            var routeNumbers = GetOrderedRouteNumbers(metadata.RouteNumbers, settings);
             if (routeNumbers.Count == 0)
                 return baseName;
 
@@ -33,16 +35,38 @@ namespace AdvancedRoadNaming.Services
             return string.IsNullOrWhiteSpace(value) ? "Unnamed Road Segment" : value.Trim();
         }
 
-        private static IEnumerable<string> GetOrderedRouteNumbers(IEnumerable<string> routeNumbers, SegmentDisplaySettings settings)
+        private static List<string> GetOrderedRouteNumbers(IReadOnlyList<string> routeNumbers, SegmentDisplaySettings settings)
         {
-            var distinct = routeNumbers
-                .Where(route => !string.IsNullOrWhiteSpace(route))
-                .Select(route => route.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase);
+            var ordered = new List<string>();
+            if (routeNumbers == null || routeNumbers.Count == 0)
+                return ordered;
 
-            return settings.OrderingMode == RouteNumberOrderingMode.Sorted
-                ? distinct.OrderBy(route => route, StringComparer.OrdinalIgnoreCase)
-                : distinct;
+            for (var i = 0; i < routeNumbers.Count; i++)
+            {
+                var route = routeNumbers[i];
+                if (string.IsNullOrWhiteSpace(route))
+                    continue;
+
+                route = route.Trim();
+                if (!ContainsRouteNumber(ordered, route))
+                    ordered.Add(route);
+            }
+
+            if (settings.OrderingMode == RouteNumberOrderingMode.Sorted && ordered.Count > 1)
+                ordered.Sort(StringComparer.OrdinalIgnoreCase);
+
+            return ordered;
+        }
+
+        private static bool ContainsRouteNumber(IReadOnlyList<string> routeNumbers, string candidate)
+        {
+            for (var i = 0; i < routeNumbers.Count; i++)
+            {
+                if (string.Equals(routeNumbers[i], candidate, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
     }
 }

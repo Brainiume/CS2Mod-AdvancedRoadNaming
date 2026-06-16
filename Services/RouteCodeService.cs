@@ -6,11 +6,14 @@ namespace AdvancedRoadNaming.Services
 {
     public sealed class RouteCodeService
     {
-        private static readonly Regex RouteCodePattern = new Regex("^[A-Z0-9][A-Z0-9-]{0,15}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
+        // Unicode compatible: accepts any Unicode letters, numbers, and hyphens
+        private static readonly Regex RouteCodePattern = new Regex(
+            @"^[\p{L}\p{N}][\p{L}\p{N}\-]{0,15}$", 
+            RegexOptions.Compiled | RegexOptions.CultureInvariant
+        );        
         public bool TryNormalize(string value, out string routeCode, out string error)
         {
-            routeCode = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
+            routeCode = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
             if (string.IsNullOrWhiteSpace(routeCode))
             {

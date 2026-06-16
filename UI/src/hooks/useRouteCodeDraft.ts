@@ -33,7 +33,7 @@ export function composeRouteCode(draft: RouteCodeDraft): string {
     return `${prefix}${normalizeToken(draft.numberPart)}`;
 }
 
-export function useRouteCodeDraft(input: string) {
+export function useRouteCodeDraft(input: string, onChange: (value: string) => void = panelActions.setInput) {
     const [draft, setDraft] = useState<RouteCodeDraft>(() => parseRouteCode(input));
 
     useEffect(() => {
@@ -42,7 +42,7 @@ export function useRouteCodeDraft(input: string) {
 
     const updateDraft = (nextDraft: RouteCodeDraft) => {
         setDraft(nextDraft);
-        panelActions.setInput(composeRouteCode(nextDraft));
+        onChange(composeRouteCode(nextDraft));
     };
 
     return { draft, updateDraft, composed: composeRouteCode(draft) };

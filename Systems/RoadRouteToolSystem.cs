@@ -23,9 +23,14 @@ namespace AdvancedRoadNaming.Systems
         private RouteNumberPlacement _routeNumberPlacement;
         private string _statusMessage;
         private bool _isRunning;
+        private bool _routeMenuActive;
         private bool _savedRoutesViewActive;
         private bool _undergroundMode;
         private long _roadNameEditRouteId;
+        private long _selectedSavedRouteId;
+        private int _manageOverlayVersion;
+        private bool _savedRoutesJsonDirty = true;
+        private string _savedRoutesJsonCache = "[]";
         private SavedRouteReviewSession _savedRouteReview;
         private readonly System.Collections.Generic.List<Entity> _savedRoutePreviewSegments = new System.Collections.Generic.List<Entity>();
         private readonly System.Collections.Generic.List<RoadRouteWaypoint> _savedRoutePreviewWaypoints = new System.Collections.Generic.List<RoadRouteWaypoint>();
@@ -43,6 +48,8 @@ namespace AdvancedRoadNaming.Systems
         public string StatusMessage => !string.IsNullOrWhiteSpace(_statusMessage) ? _statusMessage : _selectionController?.BuildRouteInstruction() ?? string.Empty;
 
         public bool IsRunning => _isRunning;
+
+        public bool RouteMenuActive => _routeMenuActive;
 
         public bool UndergroundMode => _undergroundMode;
 
@@ -74,6 +81,14 @@ namespace AdvancedRoadNaming.Systems
 
         public long RoadNameEditRouteId => _roadNameEditRouteId;
 
+        public bool SavedRoutesViewActive => _savedRoutesViewActive;
+
+        public long SelectedSavedRouteId => _selectedSavedRouteId;
+
+        public bool SavedRouteManipulateMode => _savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify;
+
+        public int ManageOverlayVersion => _manageOverlayVersion;
+
         public int ReviewSegmentCount => _savedRouteReview == null
             ? 0
             : _savedRouteReview.Mode == SavedRouteReviewMode.Modify
@@ -104,7 +119,9 @@ namespace AdvancedRoadNaming.Systems
             base.OnStartRunning();
             _isRunning = true;
             EnableToolActions(true);
-            _statusMessage = _savedRoutesViewActive
+            _statusMessage = _routeMenuActive
+                ? "Advanced Road Routes menu active."
+                : _savedRoutesViewActive
                 ? "Saved routes view active."
                 : "Route creation active. Place first waypoint on a road.";
         }
@@ -177,6 +194,7 @@ namespace AdvancedRoadNaming.Systems
 
         public void SetMode(RoadRouteToolMode mode)
         {
+            _routeMenuActive = false;
             _mode = mode;
             _statusMessage = $"Mode: {mode}. {_selectionController.BuildRouteInstruction()}";
         }
@@ -191,12 +209,35 @@ namespace AdvancedRoadNaming.Systems
             _routeNumberPlacement = placement;
         }
 
+        public void SetRouteMenuActive(bool active)
+        {
+            _routeMenuActive = active;
+            if (!active)
+                return;
+
+            _savedRoutesViewActive = false;
+            _roadNameEditRouteId = 0;
+            _selectedSavedRouteId = 0;
+            _savedRouteReview = null;
+            _selectionController.Clear();
+            _selectionController.SetHovered(Entity.Null);
+            _savedRoutePreviewSegments.Clear();
+            _savedRoutePreviewWaypoints.Clear();
+            _statusMessage = "Advanced Road Routes menu active.";
+            MarkSavedRoutesJsonDirty();
+            _manageOverlayVersion++;
+            Mod.log.Info("Road Naming: Advanced Road Routes menu activated.");
+        }
+
         public void SetSavedRoutesViewActive(bool active, bool resetSelection = true)
         {
+            _routeMenuActive = false;
             _savedRoutesViewActive = active;
             if (resetSelection)
             {
                 _roadNameEditRouteId = 0;
+                if (!active)
+                    _selectedSavedRouteId = 0;
                 _savedRouteReview = null;
                 _selectionController.Clear();
                 _selectionController.SetHovered(Entity.Null);
@@ -213,6 +254,9 @@ namespace AdvancedRoadNaming.Systems
             _statusMessage = active
                 ? "Saved routes view active."
                 : "Route creation active. Place first waypoint on a road.";
+            if (active)
+                MarkSavedRoutesJsonDirty();
+            _manageOverlayVersion++;
             Mod.log.Info(active
                 ? "Road Naming: route creation input suspended while viewing Saved Routes."
                 : "Road Naming: route creation input re-enabled.");
@@ -303,6 +347,9 @@ namespace AdvancedRoadNaming.Systems
             if (result && _mode == RoadRouteToolMode.AssignMajorRouteNumber)
             {
                 var savedRoute = _metadataSystem.SaveAppliedRoute(_selectionController.SelectedSegments, _selectionController.Waypoints, _mode, _inputText, _routeNumberPlacement);
+                _selectedSavedRouteId = savedRoute.RouteId;
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
                 _statusMessage = message + $" Saved route #{savedRoute.RouteId}.";
             }
 
@@ -310,15 +357,41 @@ namespace AdvancedRoadNaming.Systems
             return result;
         }
 
-        public string SavedRoutesJson => _metadataSystem?.BuildSavedRoutesJson() ?? "[]";
+        public string SavedRoutesJson
+        {
+            get
+            {
+                if (_metadataSystem == null)
+                    return "[]";
+
+                if (_savedRoutesJsonDirty)
+                {
+                    _savedRoutesJsonCache = _metadataSystem.BuildSavedRoutesJson() ?? "[]";
+                    _savedRoutesJsonDirty = false;
+                }
+
+                return _savedRoutesJsonCache;
+            }
+        }
 
         public bool PreviewSavedRoute(long routeId)
         {
+            return SelectSavedRoute(routeId);
+        }
+
+        public bool SelectSavedRoute(long routeId)
+        {
+            if (_savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify && _savedRouteReview.RouteId != routeId)
+                DiscardActiveSavedRouteEdit("Route selection changed; discarded unapplied manipulate edits.");
+
             _savedRoutePreviewSegments.Clear();
             _savedRoutePreviewWaypoints.Clear();
             if (_metadataSystem == null || !_metadataSystem.RouteDatabase.TryGet(routeId, out var route))
             {
                 _statusMessage = $"Saved route {routeId} was not found.";
+                if (_selectedSavedRouteId == routeId)
+                    _selectedSavedRouteId = 0;
+                _manageOverlayVersion++;
                 return false;
             }
 
@@ -333,6 +406,8 @@ namespace AdvancedRoadNaming.Systems
                 _savedRoutePreviewWaypoints.Add(route.Waypoints[i]);
 
             var status = _metadataSystem.EvaluateSavedRouteStatus(route);
+            _selectedSavedRouteId = route.RouteId;
+            _manageOverlayVersion++;
             _statusMessage = $"Previewing saved route #{route.RouteId}: {route.DisplayTitle} ({status}, {_savedRoutePreviewSegments.Count}/{route.OrderedSegmentIds.Count} valid segments).";
             Mod.log.Info(() => $"Road Naming: saved route preview requested. RouteId={route.RouteId}, ValidSegments={_savedRoutePreviewSegments.Count}, StoredSegments={route.OrderedSegmentIds.Count}, Status={status}.");
             return true;
@@ -347,9 +422,11 @@ namespace AdvancedRoadNaming.Systems
             }
 
             _savedRouteReview = review;
+            _selectedSavedRouteId = routeId;
             LoadSavedRoutePreview(review.CandidateSegments, review.CandidateWaypoints);
             _selectionController.Clear();
             _savedRoutesViewActive = true;
+            _manageOverlayVersion++;
             _statusMessage = message;
             Mod.log.Info(() => $"Road Naming: rebuild review entered. RouteId={routeId}, CandidateSegments={review.CandidateSegments.Count}.");
             return true;
@@ -390,10 +467,40 @@ namespace AdvancedRoadNaming.Systems
             _selectionController.LoadRoute(review.CandidateWaypoints, review.CandidateSegments);
             _savedRoutePreviewSegments.Clear();
             _savedRoutePreviewWaypoints.Clear();
+            _selectedSavedRouteId = routeId;
             _savedRoutesViewActive = false;
+            _manageOverlayVersion++;
             _statusMessage = message;
             Mod.log.Info(() => $"Road Naming: modify review entered. RouteId={routeId}, Waypoints={review.CandidateWaypoints.Count}, Segments={review.CandidateSegments.Count}.");
             return true;
+        }
+
+        public bool SetSavedRouteManipulateMode(long routeId, bool enabled)
+        {
+            if (enabled)
+            {
+                if (routeId <= 0)
+                    routeId = _selectedSavedRouteId;
+
+                if (routeId <= 0)
+                {
+                    _statusMessage = "Select a saved route before enabling manipulate mode.";
+                    return false;
+                }
+
+                if (!SelectSavedRoute(routeId))
+                    return false;
+
+                return BeginModifySavedRoute(routeId);
+            }
+
+            if (_savedRouteReview == null)
+            {
+                SetSavedRoutesViewActive(true, false);
+                return true;
+            }
+
+            return CancelSavedRouteReview(_savedRouteReview.RouteId);
         }
 
         public bool AcceptSavedRouteReview(long routeId)
@@ -416,7 +523,9 @@ namespace AdvancedRoadNaming.Systems
             if (result)
             {
                 _savedRouteReview = null;
-                SetSavedRoutesViewActive(true);
+                _selectedSavedRouteId = routeId;
+                MarkSavedRoutesJsonDirty();
+                SetSavedRoutesViewActive(true, false);
                 PreviewSavedRoute(routeId);
             }
 
@@ -432,7 +541,9 @@ namespace AdvancedRoadNaming.Systems
             }
 
             _savedRouteReview = null;
-            SetSavedRoutesViewActive(true);
+            _selectedSavedRouteId = routeId;
+            SetSavedRoutesViewActive(true, false);
+            PreviewSavedRoute(routeId);
             _statusMessage = $"Canceled saved route review for route {routeId}.";
             Mod.log.Info(() => $"Road Naming: saved route review canceled. RouteId={routeId}.");
             return true;
@@ -440,10 +551,50 @@ namespace AdvancedRoadNaming.Systems
 
         public bool ReapplySavedRoute(long routeId)
         {
+            if (_savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify && _savedRouteReview.RouteId == routeId)
+            {
+                var finalWaypoints = _selectionController.Waypoints;
+                var finalSegments = _selectionController.SelectedSegments;
+                if (!_metadataSystem.CommitSavedRouteReview(routeId, finalWaypoints, finalSegments, _routeNumberPlacement, out var commitMessage))
+                {
+                    _statusMessage = commitMessage;
+                    return false;
+                }
+
+                _savedRouteReview = null;
+                _savedRoutesViewActive = true;
+                _selectedSavedRouteId = routeId;
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
+
             var result = _metadataSystem.ReapplySavedRoute(routeId, out var message);
             _statusMessage = message;
+            if (result)
+            {
+                _selectedSavedRouteId = routeId;
+                MarkSavedRoutesJsonDirty();
+                SetSavedRoutesViewActive(true, false);
+                PreviewSavedRoute(routeId);
+                _manageOverlayVersion++;
+            }
             Mod.log.Info(() => $"Road Naming: saved route reapply requested. RouteId={routeId}, Result={result}, Message='{message}'.");
             return result;
+        }
+
+        private void DiscardActiveSavedRouteEdit(string message)
+        {
+            if (_savedRouteReview == null || _savedRouteReview.Mode != SavedRouteReviewMode.Modify)
+                return;
+
+            var routeId = _savedRouteReview.RouteId;
+            _savedRouteReview = null;
+            _selectionController.Clear();
+            _savedRoutesViewActive = true;
+            _selectedSavedRouteId = routeId;
+            _manageOverlayVersion++;
+            _statusMessage = message;
+            Mod.log.Info(() => $"Road Naming: manipulate edits discarded. RouteId={routeId}, Reason='{message}'.");
         }
 
         public bool BeginSavedRouteRoadNameEdit(long routeId)
@@ -492,6 +643,8 @@ namespace AdvancedRoadNaming.Systems
             var result = _metadataSystem.CaptureSavedRouteRoadNames(routeId, out var message);
             _roadNameEditRouteId = 0;
             _savedRoutesViewActive = true;
+            if (result)
+                MarkSavedRoutesJsonDirty();
             _statusMessage = message;
             Mod.log.Info(() => $"Road Naming: saved route road-name edit finished. RouteId={routeId}, Result={result}, Message='{message}'.");
             return result;
@@ -504,9 +657,13 @@ namespace AdvancedRoadNaming.Systems
             {
                 if (_savedRouteReview != null && _savedRouteReview.RouteId == routeId)
                     _savedRouteReview = null;
+                if (_selectedSavedRouteId == routeId)
+                    _selectedSavedRouteId = 0;
                 _savedRoutePreviewSegments.Clear();
                 _savedRoutePreviewWaypoints.Clear();
                 _selectionController.Clear();
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
             }
 
             _statusMessage = message;
@@ -516,6 +673,11 @@ namespace AdvancedRoadNaming.Systems
         public bool RenameSavedRoute(long routeId, string title)
         {
             var result = _metadataSystem.RenameSavedRoute(routeId, title, out var message);
+            if (result)
+            {
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
             _statusMessage = message;
             return result;
         }
@@ -523,8 +685,31 @@ namespace AdvancedRoadNaming.Systems
         public bool UpdateSavedRouteInput(long routeId, string inputValue)
         {
             var result = _metadataSystem.UpdateSavedRouteInput(routeId, inputValue, out var message);
+            if (result)
+            {
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
             _statusMessage = message;
             return result;
+        }
+
+        public bool UpdateSavedRoutePlacement(long routeId, RouteNumberPlacement placement)
+        {
+            var result = _metadataSystem.UpdateSavedRoutePlacement(routeId, placement, out var message);
+            if (result)
+            {
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
+            _statusMessage = message;
+            return result;
+        }
+
+        private void MarkSavedRoutesJsonDirty()
+        {
+            _savedRoutesJsonDirty = true;
+            _savedRoutesJsonCache = "[]";
         }
 
         public bool RebuildSavedRoute(long routeId)
@@ -563,10 +748,23 @@ namespace AdvancedRoadNaming.Systems
                 return inputDeps;
             }
 
+            var leftClickPressed = _isRunning && applyAction != null && applyAction.WasPressedThisFrame();
+            var leftClickReleased = _isRunning && applyAction != null && applyAction.WasReleasedThisFrame();
+            var rightClickPressed = _isRunning && Mouse.current?.rightButton.wasPressedThisFrame == true;
+
+            if (_routeMenuActive)
+            {
+                _selectionController.SetHovered(Entity.Null);
+                EnableToolActions(false);
+                return inputDeps;
+            }
+
             if (_savedRoutesViewActive)
             {
                 _selectionController.SetHovered(Entity.Null);
                 EnableToolActions(false);
+                if (Mouse.current?.leftButton.wasPressedThisFrame == true)
+                    TrySelectSavedRouteFromRaycast();
 
                 return inputDeps;
             }
@@ -574,10 +772,6 @@ namespace AdvancedRoadNaming.Systems
             UpdateHoveredWaypoint();
 
             EnableToolActions(true);
-
-            var leftClickPressed = _isRunning && applyAction != null && applyAction.WasPressedThisFrame();
-            var leftClickReleased = _isRunning && applyAction != null && applyAction.WasReleasedThisFrame();
-            var rightClickPressed = _isRunning && Mouse.current?.rightButton.wasPressedThisFrame == true;
 
             if (_selectionController.HasActiveWaypointEdit)
             {
@@ -759,6 +953,110 @@ namespace AdvancedRoadNaming.Systems
 
             waypoint = new RoadRouteWaypoint(segment, snappedPosition, curvePosition);
             return true;
+        }
+
+        private bool TrySelectSavedRouteFromRaycast()
+        {
+            Entity entity;
+            RaycastHit hit;
+            if (!GetRaycastResult(out entity, out hit))
+            {
+                _statusMessage = "Click a saved route line or waypoint to select it.";
+                return false;
+            }
+
+            RoadRouteWaypoint waypoint;
+            if (_metadataSystem.Validation.IsValidRoadSegment(entity))
+            {
+                if (!TryCreateWaypointOnSegment(entity, hit.m_Position, out waypoint))
+                    return false;
+            }
+            else if (EntityManager.HasComponent<Node>(entity))
+            {
+                if (!TryCreateWaypointFromNode(entity, hit.m_Position, out waypoint))
+                    return false;
+            }
+            else
+            {
+                _statusMessage = "Click a saved route line or waypoint to select it.";
+                return false;
+            }
+
+            if (!TryFindSavedRouteAtWaypoint(waypoint, out var routeId))
+            {
+                _statusMessage = "No saved route found at that road segment.";
+                return false;
+            }
+
+            return SelectSavedRoute(routeId);
+        }
+
+        private bool TryFindSavedRouteAtWaypoint(RoadRouteWaypoint waypoint, out long routeId)
+        {
+            routeId = 0;
+            var bestScore = float.MaxValue;
+            foreach (var route in _metadataSystem.RouteDatabase.Routes)
+            {
+                if (route == null || route.IsDeleted)
+                    continue;
+
+                if (!RouteContainsSegment(route, waypoint.Segment))
+                    continue;
+
+                var score = ScoreRoutePick(route, waypoint);
+                if (route.RouteId == _selectedSavedRouteId)
+                    score -= 0.25f;
+
+                if (score < bestScore || (math.abs(score - bestScore) < 0.001f && (routeId == 0 || route.RouteId < routeId)))
+                {
+                    bestScore = score;
+                    routeId = route.RouteId;
+                }
+            }
+
+            return routeId > 0;
+        }
+
+        private static bool RouteContainsSegment(SavedRouteRecord route, Entity segment)
+        {
+            if (route == null || segment == Entity.Null)
+                return false;
+
+            for (var i = 0; i < route.OrderedSegmentIds.Count; i++)
+            {
+                if (route.OrderedSegmentIds[i] == segment)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static float ScoreRoutePick(SavedRouteRecord route, RoadRouteWaypoint waypoint)
+        {
+            var bestWaypointDistance = float.MaxValue;
+            for (var i = 0; i < route.Waypoints.Count; i++)
+            {
+                var savedWaypoint = route.Waypoints[i];
+                if (savedWaypoint.Segment != waypoint.Segment)
+                    continue;
+
+                bestWaypointDistance = math.min(bestWaypointDistance, math.distance(savedWaypoint.Position, waypoint.Position));
+            }
+
+            if (bestWaypointDistance <= 20f)
+                return bestWaypointDistance;
+
+            var firstSegmentIndex = 10000;
+            for (var i = 0; i < route.OrderedSegmentIds.Count; i++)
+            {
+                if (route.OrderedSegmentIds[i] == waypoint.Segment)
+                {
+                    firstSegmentIndex = i;
+                    break;
+                }
+            }
+
+            return 1000f + firstSegmentIndex;
         }
 
         private void LoadSavedRoutePreview(System.Collections.Generic.IReadOnlyList<Entity> segments, System.Collections.Generic.IReadOnlyList<RoadRouteWaypoint> waypoints)

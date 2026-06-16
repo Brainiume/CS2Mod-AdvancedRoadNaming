@@ -45,6 +45,31 @@ namespace AdvancedRoadNaming.Domain
 
         public int WaypointCount => Waypoints.Count;
 
+        public void ClearStoredData()
+        {
+            Waypoints.Clear();
+            OrderedSegmentIds.Clear();
+            OriginalStreetNamesSnapshot.Clear();
+            Notes = null;
+            StartDistrictName = null;
+            EndDistrictName = null;
+            StartRoadName = null;
+            EndRoadName = null;
+            DerivedDisplayCorridor = null;
+            DistrictSummary = null;
+            StartAnchorSegment = Entity.Null;
+            EndAnchorSegment = Entity.Null;
+            StartAnchorCurvePosition = 0;
+            EndAnchorCurvePosition = 0;
+            StartAnchorPositionX = 0;
+            StartAnchorPositionY = 0;
+            StartAnchorPositionZ = 0;
+            EndAnchorPositionX = 0;
+            EndAnchorPositionY = 0;
+            EndAnchorPositionZ = 0;
+            LastKnownResolvedSegmentCount = 0;
+        }
+
         public void Write(IJsonWriter writer)
         {
             writer.TypeBegin(typeof(SavedRouteRecord).FullName);

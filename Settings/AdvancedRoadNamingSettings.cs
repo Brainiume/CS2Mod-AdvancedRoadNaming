@@ -44,6 +44,9 @@ namespace AdvancedRoadNaming.Settings
         [SettingsUIDropdown(typeof(AdvancedRoadNamingSettings), nameof(GetOrderingModeOptions))]
         public RouteNumberOrderingMode OrderingMode { get; set; }
 
+        [SettingsUISection(GeneralTab, DisplayGroup)]
+        public bool ShowAdvancedRouteDetails { get; set; }
+
         [SettingsUISection(GeneralTab, AdvancedGroup)]
         public bool EnableLogging { get; set; }
 
@@ -93,6 +96,7 @@ namespace AdvancedRoadNaming.Settings
             RouteNumberSeparator = " / ";
             AllowMultipleRouteNumbers = true;
             OrderingMode = RouteNumberOrderingMode.InsertionOrder;
+            ShowAdvancedRouteDetails = false;
             EnableLogging = false;
             CombineRoadAggregates = true;
             CombineRoadAggregatesDefaultMigrated = false;

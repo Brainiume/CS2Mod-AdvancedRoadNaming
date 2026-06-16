@@ -4,6 +4,8 @@ export type RouteToolMode =
 
 export type RouteToolModeCommand = "rename" | "assign";
 
+export type RoutePanelScreen = "menu" | "newRoute" | "manageRoutes";
+
 export type SavedRouteStatus =
     | "Valid"
     | "PartiallyValid"
@@ -26,6 +28,7 @@ export interface SavedRoute {
     input: string;
     routeCode?: string;
     routePrefixType?: SavedRouteFilter | "Custom";
+    routeNumberPlacement?: RouteNumberPlacement;
     segments: number;
     waypoints: number;
     status: SavedRouteStatus;
@@ -53,6 +56,11 @@ export interface PanelState {
     savedRoutes: SavedRoute[];
     routeNumberPlacement: RouteNumberPlacement;
     undergroundMode: boolean;
+    selectedSavedRouteId: number;
+    savedRoutesViewActive: boolean;
+    savedRouteManipulateMode: boolean;
+    savedRouteReviewRouteId: number;
+    showAdvancedRouteDetails: boolean;
 }
 
 export interface RouteCodeDraft {

@@ -31,7 +31,9 @@ namespace AdvancedRoadNaming.Systems
             _stateBinding = new ValueBinding<string>(PanelBindingGroup, "state", _lastState, ValueWriters.Create<string>(), System.Collections.Generic.EqualityComparer<string>.Default);
 
             AddBinding(_stateBinding);
+            AddBinding(new TriggerBinding(PanelBindingGroup, "activateRouteMenu", ActivateRouteMenu));
             AddBinding(new TriggerBinding(PanelBindingGroup, "activate", ActivateTool));
+            AddBinding(new TriggerBinding(PanelBindingGroup, "activateSavedRoutes", ActivateSavedRoutes));
             AddBinding(new TriggerBinding(PanelBindingGroup, "cancel", CancelTool));
             AddBinding(new TriggerBinding(PanelBindingGroup, "apply", Apply));
             AddBinding(new TriggerBinding(PanelBindingGroup, "clear", Clear));
@@ -40,6 +42,13 @@ namespace AdvancedRoadNaming.Systems
             AddBinding(new TriggerBinding<string>(PanelBindingGroup, "setInput", SetInput, ValueReaders.Create<string>()));
             AddBinding(new TriggerBinding<string>(PanelBindingGroup, "setRouteNumberPlacement", SetRouteNumberPlacement, ValueReaders.Create<string>()));
             AddBinding(new TriggerBinding<bool>(PanelBindingGroup, "setUndergroundMode", SetUndergroundMode, ValueReaders.Create<bool>()));
+            AddBinding(new TriggerBinding<long>(PanelBindingGroup, "selectSavedRoute", SelectSavedRoute, ValueReaders.Create<long>()));
+            AddBinding(new TriggerBinding<long>(PanelBindingGroup, "previewSavedRoute", SelectSavedRoute, ValueReaders.Create<long>()));
+            AddBinding(new TriggerBinding<long>(PanelBindingGroup, "reapplySavedRoute", ReapplySavedRoute, ValueReaders.Create<long>()));
+            AddBinding(new TriggerBinding<long>(PanelBindingGroup, "deleteSavedRoute", DeleteSavedRoute, ValueReaders.Create<long>()));
+            AddBinding(new TriggerBinding<string>(PanelBindingGroup, "updateSavedRouteInput", UpdateSavedRouteInput, ValueReaders.Create<string>()));
+            AddBinding(new TriggerBinding<string>(PanelBindingGroup, "updateSavedRoutePlacement", UpdateSavedRoutePlacement, ValueReaders.Create<string>()));
+            AddBinding(new TriggerBinding<string>(PanelBindingGroup, "toggleManipulateRoute", ToggleManipulateRoute, ValueReaders.Create<string>()));
             Mod.log.Info("RoadRouteToolUISystem selected-info bindings registered");
         }
 
@@ -76,6 +85,7 @@ namespace AdvancedRoadNaming.Systems
             try
             {
                 _gameToolSystem.activeTool = _toolSystem;
+                _toolSystem?.SetRouteMenuActive(false);
                 _toolSystem?.SetSavedRoutesViewActive(false);
                 _panelVisible = true;
                 Mod.log.Info("Road Naming: selected-info panel activated the route tool.");
@@ -86,11 +96,56 @@ namespace AdvancedRoadNaming.Systems
             }
         }
 
+        private void ActivateRouteMenu()
+        {
+            if (!CanUseRouteTool())
+            {
+                Mod.log.Warn("Road Naming: route menu activation skipped because the gameplay tool systems are not available.");
+                return;
+            }
+
+            try
+            {
+                _gameToolSystem.activeTool = _toolSystem;
+                _toolSystem?.SetRouteMenuActive(true);
+                _panelVisible = true;
+                Mod.log.Info("Road Naming: selected-info panel activated the route menu.");
+            }
+            catch (Exception ex)
+            {
+                Mod.log.Error(ex, "Failed to activate Road Naming route menu.");
+            }
+        }
+
+        private void ActivateSavedRoutes()
+        {
+            if (!CanUseRouteTool())
+            {
+                Mod.log.Warn("Road Naming: saved-routes activation skipped because the gameplay tool systems are not available.");
+                return;
+            }
+
+            try
+            {
+                _gameToolSystem.activeTool = _toolSystem;
+                _toolSystem?.SetRouteMenuActive(false);
+                _toolSystem?.SetMode(RoadRouteToolMode.AssignMajorRouteNumber);
+                _toolSystem?.SetSavedRoutesViewActive(true, false);
+                _panelVisible = true;
+                Mod.log.Info("Road Naming: selected-info panel activated saved routes view.");
+            }
+            catch (Exception ex)
+            {
+                Mod.log.Error(ex, "Failed to activate Road Naming saved routes view.");
+            }
+        }
+
         private void CancelTool()
         {
             try
             {
                 _toolSystem?.SetSavedRoutesViewActive(false);
+                _toolSystem?.SetRouteMenuActive(false);
                 _toolSystem?.ClearSelection();
 
                 if (_gameToolSystem != null && _defaultToolSystem != null && IsToolOpen())
@@ -171,6 +226,79 @@ namespace AdvancedRoadNaming.Systems
             _toolSystem?.SetUndergroundMode(enabled);
         }
 
+        private void SelectSavedRoute(long routeId)
+        {
+            Mod.log.Info(() => $"Road Naming: SelectSavedRoute received. RouteId={routeId}.");
+            _toolSystem?.SelectSavedRoute(routeId);
+        }
+
+        private void ReapplySavedRoute(long routeId)
+        {
+            Mod.log.Info(() => $"Road Naming: ReapplySavedRoute received. RouteId={routeId}.");
+            _toolSystem?.ReapplySavedRoute(routeId);
+        }
+
+        private void DeleteSavedRoute(long routeId)
+        {
+            Mod.log.Info(() => $"Road Naming: DeleteSavedRoute received. RouteId={routeId}.");
+            _toolSystem?.DeleteSavedRoute(routeId);
+        }
+
+        private void UpdateSavedRouteInput(string payload)
+        {
+            if (!TryParseRouteStringPayload(payload, out var routeId, out var value))
+                return;
+
+            Mod.log.Info(() => $"Road Naming: UpdateSavedRouteInput received. RouteId={routeId}, Value='{value}'.");
+            _toolSystem?.UpdateSavedRouteInput(routeId, value);
+        }
+
+        private void UpdateSavedRoutePlacement(string payload)
+        {
+            if (!TryParseRouteStringPayload(payload, out var routeId, out var value))
+                return;
+
+            var placement = string.Equals(value, RouteNumberPlacement.BeforeBaseName.ToString(), StringComparison.Ordinal)
+                ? RouteNumberPlacement.BeforeBaseName
+                : RouteNumberPlacement.AfterBaseName;
+
+            Mod.log.Info(() => $"Road Naming: UpdateSavedRoutePlacement received. RouteId={routeId}, Placement={placement}.");
+            _toolSystem?.UpdateSavedRoutePlacement(routeId, placement);
+        }
+
+        private void ToggleManipulateRoute(string payload)
+        {
+            var routeId = 0L;
+            var enabled = false;
+            try
+            {
+                var parts = (payload ?? string.Empty).Split('|');
+                if (parts.Length > 0)
+                    long.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out routeId);
+                enabled = parts.Length > 1 && parts[1] == "1";
+            }
+            catch
+            {
+                routeId = 0;
+                enabled = false;
+            }
+
+            Mod.log.Info(() => $"Road Naming: ToggleManipulateRoute received. RouteId={routeId}, Enabled={enabled}.");
+            _toolSystem?.SetSavedRouteManipulateMode(routeId, enabled);
+        }
+
+        private static bool TryParseRouteStringPayload(string payload, out long routeId, out string value)
+        {
+            routeId = 0;
+            value = string.Empty;
+            var parts = (payload ?? string.Empty).Split(new[] { '|' }, 2);
+            if (parts.Length == 0 || !long.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out routeId))
+                return false;
+
+            value = parts.Length > 1 ? parts[1] ?? string.Empty : string.Empty;
+            return routeId > 0;
+        }
+
         private string BuildState(bool gameplayAvailable)
         {
             try
@@ -195,7 +323,12 @@ namespace AdvancedRoadNaming.Systems
                     Escape(waypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                     Escape(savedRoutesJson),
                     Escape((_toolSystem?.RouteNumberPlacement ?? RouteNumberPlacement.AfterBaseName).ToString()),
-                    Escape(_toolSystem?.UndergroundMode == true ? "1" : "0")
+                    Escape(_toolSystem?.UndergroundMode == true ? "1" : "0"),
+                    Escape((_toolSystem?.SelectedSavedRouteId ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    Escape(_toolSystem?.SavedRoutesViewActive == true ? "1" : "0"),
+                    Escape(_toolSystem?.SavedRouteManipulateMode == true ? "1" : "0"),
+                    Escape((_toolSystem?.SavedRouteReview?.RouteId ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    Escape(Mod.Settings?.ShowAdvancedRouteDetails == true ? "1" : "0")
                 });
             }
             catch (Exception ex)
@@ -220,6 +353,11 @@ namespace AdvancedRoadNaming.Systems
                 Escape("0"),
                 Escape("[]"),
                 Escape(RouteNumberPlacement.AfterBaseName.ToString()),
+                Escape("0"),
+                Escape("0"),
+                Escape("0"),
+                Escape("0"),
+                Escape("0"),
                 Escape("0")
             });
         }
