@@ -2,7 +2,7 @@ using Game;
 
 namespace AdvancedRoadNaming.Systems
 {
-    public sealed partial class RoadAggregateProtectionSystem : GameSystemBase
+    public sealed partial class RoadNamePersistenceSystem : GameSystemBase
     {
         private SegmentMetadataSystem _metadataSystem;
 
@@ -14,7 +14,7 @@ namespace AdvancedRoadNaming.Systems
 
         protected override void OnUpdate()
         {
-            _metadataSystem?.ProtectModAggregatesBeforeVanilla();
+            _metadataSystem.ProcessLiveNamePersistence();
         }
     }
 }

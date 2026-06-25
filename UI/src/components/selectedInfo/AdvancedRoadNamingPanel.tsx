@@ -76,6 +76,7 @@ export function AdvancedRoadNamingPanel() {
                     manipulateMode={state.savedRouteManipulateMode}
                     reviewRouteId={state.savedRouteReviewRouteId}
                     showAdvancedRouteDetails={state.showAdvancedRouteDetails}
+                    applyCooldownActive={state.applyCooldownActive}
                 />
             ) : isRoutePanel ? (
                 <AdvancedRoadRoutesContent
@@ -84,7 +85,7 @@ export function AdvancedRoadNamingPanel() {
                     savedRouteInputs={state.savedRoutes.map((route) => route.input)}
                     canUndo={state.waypointCount > 0}
                     canClear={state.waypointCount > 0 || state.selectedSegments > 0 || !!state.input}
-                    canApply={state.selectedSegments > 0}
+                    canApply={state.selectedSegments > 0 && !state.applyCooldownActive}
                 />
             ) : (
                 <AdvancedRoadNamingContent
@@ -92,7 +93,7 @@ export function AdvancedRoadNamingPanel() {
                     undergroundMode={state.undergroundMode}
                     canUndo={state.waypointCount > 0}
                     canClear={state.waypointCount > 0 || state.selectedSegments > 0 || !!state.input}
-                    canApply={state.selectedSegments > 0}
+                    canApply={state.selectedSegments > 0 && !state.applyCooldownActive}
                 />
             )}
         </SelectedInfoAdjacentPanel>

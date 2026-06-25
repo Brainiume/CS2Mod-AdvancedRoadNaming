@@ -12,6 +12,7 @@ interface ManageRoutesContentProps {
     manipulateMode: boolean;
     reviewRouteId: number;
     showAdvancedRouteDetails: boolean;
+    applyCooldownActive: boolean;
 }
 
 export function ManageRoutesContent(props: ManageRoutesContentProps) {
@@ -101,7 +102,7 @@ export function ManageRoutesContent(props: ManageRoutesContentProps) {
                             <Button
                                 variant="flat"
                                 className={styles.actionButton}
-                                disabled={!hasSelection}
+                                disabled={!hasSelection || props.applyCooldownActive}
                                 onSelect={() => selectedRoute && panelActions.reapplySavedRoute(selectedRoute.id)}
                             >
                                 Reapply

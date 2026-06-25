@@ -61,6 +61,7 @@ export interface PanelState {
     savedRouteManipulateMode: boolean;
     savedRouteReviewRouteId: number;
     showAdvancedRouteDetails: boolean;
+    applyCooldownActive: boolean;
 }
 
 export interface RouteCodeDraft {

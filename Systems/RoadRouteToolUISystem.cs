@@ -328,7 +328,8 @@ namespace AdvancedRoadNaming.Systems
                     Escape(_toolSystem?.SavedRoutesViewActive == true ? "1" : "0"),
                     Escape(_toolSystem?.SavedRouteManipulateMode == true ? "1" : "0"),
                     Escape((_toolSystem?.SavedRouteReview?.RouteId ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                    Escape(Mod.Settings?.ShowAdvancedRouteDetails == true ? "1" : "0")
+                    Escape(Mod.Settings?.ShowAdvancedRouteDetails == true ? "1" : "0"),
+                    Escape(_toolSystem?.ApplyCooldownActive == true ? "1" : "0")
                 });
             }
             catch (Exception ex)
@@ -353,6 +354,7 @@ namespace AdvancedRoadNaming.Systems
                 Escape("0"),
                 Escape("[]"),
                 Escape(RouteNumberPlacement.AfterBaseName.ToString()),
+                Escape("0"),
                 Escape("0"),
                 Escape("0"),
                 Escape("0"),

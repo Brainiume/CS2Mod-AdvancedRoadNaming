@@ -15,6 +15,8 @@ namespace AdvancedRoadNaming.Systems
     public sealed partial class RoadRouteToolSystem : ToolBaseSystem
     {
         public const string ToolIdentifier = "AdvancedRoadNaming.RouteBasedRoadNamingTool";
+        private const int ApplyCooldownMilliseconds = 1000;
+        private static readonly long ApplyCooldownTimestampTicks = System.Math.Max(1L, System.Diagnostics.Stopwatch.Frequency * ApplyCooldownMilliseconds / 1000L);
 
         private SegmentMetadataSystem _metadataSystem;
         private RouteSelectionController _selectionController;
@@ -32,6 +34,7 @@ namespace AdvancedRoadNaming.Systems
         private bool _savedRoutesJsonDirty = true;
         private string _savedRoutesJsonCache = "[]";
         private SavedRouteReviewSession _savedRouteReview;
+        private long _applyCooldownUntilTimestamp;
         private readonly System.Collections.Generic.List<Entity> _savedRoutePreviewSegments = new System.Collections.Generic.List<Entity>();
         private readonly System.Collections.Generic.List<RoadRouteWaypoint> _savedRoutePreviewWaypoints = new System.Collections.Generic.List<RoadRouteWaypoint>();
 
@@ -88,6 +91,8 @@ namespace AdvancedRoadNaming.Systems
         public bool SavedRouteManipulateMode => _savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify;
 
         public int ManageOverlayVersion => _manageOverlayVersion;
+
+        public bool ApplyCooldownActive => System.Diagnostics.Stopwatch.GetTimestamp() < _applyCooldownUntilTimestamp;
 
         public int ReviewSegmentCount => _savedRouteReview == null
             ? 0
@@ -331,6 +336,9 @@ namespace AdvancedRoadNaming.Systems
                 return false;
             }
 
+            if (!TryBeginApplyCooldown("Apply"))
+                return false;
+
             bool result;
             string message;
             switch (_mode)
@@ -511,6 +519,9 @@ namespace AdvancedRoadNaming.Systems
                 return false;
             }
 
+            if (!TryBeginApplyCooldown("AcceptSavedRouteReview"))
+                return false;
+
             var finalWaypoints = _savedRouteReview.Mode == SavedRouteReviewMode.Modify
                 ? _selectionController.Waypoints
                 : _savedRouteReview.CandidateWaypoints;
@@ -551,6 +562,9 @@ namespace AdvancedRoadNaming.Systems
 
         public bool ReapplySavedRoute(long routeId)
         {
+            if (!TryBeginApplyCooldown("ReapplySavedRoute"))
+                return false;
+
             if (_savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify && _savedRouteReview.RouteId == routeId)
             {
                 var finalWaypoints = _selectionController.Waypoints;
@@ -566,6 +580,10 @@ namespace AdvancedRoadNaming.Systems
                 _selectedSavedRouteId = routeId;
                 MarkSavedRoutesJsonDirty();
                 _manageOverlayVersion++;
+                SetSavedRoutesViewActive(true, false);
+                PreviewSavedRoute(routeId);
+                Mod.log.Info(() => $"Road Naming: manipulated saved route applied. RouteId={routeId}.");
+                return true;
             }
 
             var result = _metadataSystem.ReapplySavedRoute(routeId, out var message);
@@ -580,6 +598,21 @@ namespace AdvancedRoadNaming.Systems
             }
             Mod.log.Info(() => $"Road Naming: saved route reapply requested. RouteId={routeId}, Result={result}, Message='{message}'.");
             return result;
+        }
+
+        private bool TryBeginApplyCooldown(string operation)
+        {
+            var now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (now < _applyCooldownUntilTimestamp)
+            {
+                var remainingMilliseconds = (_applyCooldownUntilTimestamp - now) * 1000L / System.Diagnostics.Stopwatch.Frequency;
+                _statusMessage = $"Please wait {System.Math.Max(1L, remainingMilliseconds)} ms before applying again.";
+                Mod.log.Warn(() => $"Road Naming: duplicate apply ignored during cooldown. Operation={operation}, RemainingMilliseconds={remainingMilliseconds}.");
+                return false;
+            }
+
+            _applyCooldownUntilTimestamp = now + ApplyCooldownTimestampTicks;
+            return true;
         }
 
         private void DiscardActiveSavedRouteEdit(string message)

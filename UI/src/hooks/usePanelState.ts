@@ -21,6 +21,7 @@ const DEFAULT_STATE: PanelState = {
     savedRouteManipulateMode: false,
     savedRouteReviewRouteId: 0,
     showAdvancedRouteDetails: false,
+    applyCooldownActive: false,
 };
 
 const MODES: Record<string, RouteToolMode> = {
@@ -99,6 +100,7 @@ export function parsePanelState(raw: string): PanelState {
         savedRouteManipulateMode: parts[14] === "1",
         savedRouteReviewRouteId: toNumber(parts[15] ?? "0"),
         showAdvancedRouteDetails: parts[16] === "1",
+        applyCooldownActive: parts[17] === "1",
     };
 }
 

@@ -53,8 +53,7 @@ namespace AdvancedRoadNaming
 
             updateSystem.UpdateAt<SegmentMetadataSystem>(SystemUpdatePhase.Deserialize);
             updateSystem.UpdateAt<SegmentMetadataSystem>(SystemUpdatePhase.Serialize);
-            updateSystem.UpdateAfter<SegmentMetadataSystem, AggregateSystem>(SystemUpdatePhase.ModificationEnd);
-            updateSystem.UpdateBefore<RoadAggregateProtectionSystem, AggregateSystem>(SystemUpdatePhase.ModificationEnd);
+            updateSystem.UpdateAfter<RoadNamePersistenceSystem, AggregateSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateAt<RoadRouteToolSystem>(SystemUpdatePhase.ToolUpdate);
             updateSystem.UpdateAt<RoadRouteToolTooltipSystem>(SystemUpdatePhase.UITooltip);
             updateSystem.UpdateAt<RoadRouteToolUISystem>(SystemUpdatePhase.UIUpdate);

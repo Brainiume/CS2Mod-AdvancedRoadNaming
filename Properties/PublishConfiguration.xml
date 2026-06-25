@@ -15,7 +15,6 @@ The main goal is to give players more control over road naming, since the base g
 The mod currently has two main modes, both of which can be accessed by clicking on a road segment.
 
 # Road Route Naming
-## (Work in Progress)
 This mode lets you assign major route numbers, such as A1, M2, or A8, to a selected road corridor. The original street names remain intact, but the chosen segments gain the route designation. This makes it possible to build routes across multiple streets without renaming the roads themselves, while avoiding unwanted parts of a road receiving the route number.
 
 # Road Renaming
@@ -49,30 +48,22 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.6.1" />
+	<ModVersion Value="0.1.7" />
 	<!--Recommended version of the base game to use the mod-->
-	<GameVersion Value="1.5.*" />
+	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
 	<Dependency Id="" />
 	<!--Required DLC, can be set multiple times. Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture"-->
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-		Road Routes
-		
-		*   New Manage Routes menu, allows for viewing of saved all road routes.
-		*   Routes can now be configured, manipulated and deleted.
-		*   Saved routes can now be selected from the list or visually in the world
-		*   Added setting to show or hide advanced route details.
-		
 		Fixes
 		
-		*   Fixed roads sometimes losing names or showing invisible names after renaming.
-		*   Fixed route names reverting after loading saves or restarting the game.
-		*   Fixed issues where renamed route roads could conflict with vanilla road naming.
-		*   Fixed route-numbered roads sometimes showing duplicate names.
-		*   A road aggregate that loses its name (becomes invisible) can now be restored / repaired using the rename mode.
-		*   Various mod performance improvements
+		* Update to 1.6.0f0
+		* Fixed Reapply not correctly working on roads with an existing route appplied.
+		* Added a short cooldown to Apply and Reapply buttons.
+		* Prevented manipulated routes from applying twice.
+		* Reduced conflicts with the game’s normal road handling reducing the chance of invisible road names (Invisible road names can be repaired by using the mod rename mode).
 		
 		Known Issues
 		

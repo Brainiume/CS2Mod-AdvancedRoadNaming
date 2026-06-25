@@ -26,6 +26,9 @@ namespace AdvancedRoadNaming.Systems
         private const int DeferredNameReapplyDelayTicks = 5;
         private const int DeferredNameReapplyRetryDelayTicks = 10;
         private const int DeferredNameReapplyMaxAttempts = 10;
+        private const int PersistedNameReapplyDelayTicks = 3;
+        private const int PersistedNameReapplyCooldownTicks = 30;
+        private const int PersistedNameFallbackAuditTicks = 256;
         private const float RebuildCandidateOverlapThreshold = 0.8f;
 
         private SegmentMetadataRepository _repository;
@@ -36,6 +39,8 @@ namespace AdvancedRoadNaming.Systems
         private RouteDatabaseService _routeDatabase;
         private NameSystem _nameSystem;
         private EntityQuery _aggregatedRoadEdgeQuery;
+        private EntityQuery _modifiedRoadEdgeQuery;
+        private EntityQuery _modifiedAggregateQuery;
         private readonly List<AggregateSplitStabilityCheck> _aggregateStabilityChecks = new List<AggregateSplitStabilityCheck>();
         private readonly List<ProtectedModAggregateGroup> _protectedModAggregateGroups = new List<ProtectedModAggregateGroup>();
         private readonly HashSet<int> _pendingProtectedModAggregateValidation = new HashSet<int>();
@@ -46,6 +51,21 @@ namespace AdvancedRoadNaming.Systems
         private int _pendingPostLoadNameReapplyDelayTicks;
         private int _pendingPostLoadNameReapplyAttempts;
         private bool _pendingPostLoadNameReapplyWaitingLogged;
+        private readonly Dictionary<Entity, PersistedNameCandidate> _persistedNameCandidates = new Dictionary<Entity, PersistedNameCandidate>();
+        private bool _persistedNameReapplyRequested;
+        private int _persistedNameReapplyDelayTicks;
+        private int _persistedNameReapplyCooldownTicks;
+        private int _persistedNameFallbackAuditTicks = PersistedNameFallbackAuditTicks;
+
+        private struct PersistedNameCandidate
+        {
+            public string ExpectedName;
+            public string CurrentName;
+            public long LastModifiedUtcTicks;
+            public int SegmentIndex;
+            public bool CurrentNameMatches;
+            public bool HasConflict;
+        }
 
         public SegmentMetadataRepository Repository => _repository;
 
@@ -69,24 +89,36 @@ namespace AdvancedRoadNaming.Systems
             _routeDatabase = new RouteDatabaseService();
             _nameSystem = World.GetOrCreateSystemManaged<NameSystem>();
             _aggregatedRoadEdgeQuery = GetEntityQuery(ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Road>(), ComponentType.ReadOnly<Aggregated>());
+            _modifiedRoadEdgeQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Edge>(), ComponentType.ReadOnly<Road>() },
+                Any = new[] { ComponentType.ReadOnly<Created>(), ComponentType.ReadOnly<Updated>(), ComponentType.ReadOnly<Deleted>() }
+            });
+            _modifiedAggregateQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Aggregate>() },
+                Any = new[] { ComponentType.ReadOnly<Created>(), ComponentType.ReadOnly<Updated>(), ComponentType.ReadOnly<Deleted>() }
+            });
             _managedAggregateQuery = GetEntityQuery(ComponentType.ReadOnly<AdvancedRoadNamingManagedAggregate>(), ComponentType.ReadOnly<AggregateElement>());
             _applyService = new RouteApplyService(_repository, _validation, _resolver, _routeCodeService, GetBaseName, message => Mod.log.Info(message));
             Mod.log.Info("SegmentMetadataSystem created");
         }
 
         
-        // Runs 2 functions each update to ensure everything is valid & up to date
-        // Checks if the mod needs to reapply names after loading a save and another to check the stability of da
-        // aggregates after splitting them for a name change and reapplying the split if needed
         protected override void OnUpdate()
+        {
+            // Live work runs only through RoadNamePersistenceSystem at ModificationEnd.
+        }
+
+        // Vanilla remains authoritative for aggregate membership. Runtime persistence only
+        // restores resolved custom names after vanilla road or aggregate changes settle.
+        internal void ProcessLiveNamePersistence()
         {
             if (!IsSafeForLiveAggregateMaintenance())
                 return;
 
             ProcessDeferredPostLoadNameReapply();
-            UpdateAggregateStabilityChecks();
-            ValidatePendingProtectedModAggregates();
-            CleanupEmptyManagedAggregates();
+            UpdatePersistedNameReconciliation();
         }
 
         private bool IsSafeForLiveAggregateMaintenance()
@@ -94,24 +126,163 @@ namespace AdvancedRoadNaming.Systems
             return IsSafeForPostLoadNameWrites(out _);
         }
 
-        public void ProtectModAggregatesBeforeVanilla()
+        private void UpdatePersistedNameReconciliation()
         {
-            if (!IsModAggregateProtectionEnabled() || _protectedModAggregateGroups.Count == 0 || !IsSafeForLiveAggregateMaintenance())
+            if (_repository.Count == 0 || _pendingPostLoadNameReapply)
+            {
+                ResetPersistedNameReconciliation();
+                return;
+            }
+
+            if (_persistedNameReapplyCooldownTicks > 0)
+                _persistedNameReapplyCooldownTicks--;
+
+            if (_persistedNameFallbackAuditTicks > 0)
+            {
+                _persistedNameFallbackAuditTicks--;
+            }
+            else
+            {
+                RequestPersistedNameReconciliation(0);
+            }
+
+            if (!_persistedNameReapplyRequested
+                && (!_modifiedRoadEdgeQuery.IsEmptyIgnoreFilter || !_modifiedAggregateQuery.IsEmptyIgnoreFilter))
+            {
+                RequestPersistedNameReconciliation(PersistedNameReapplyDelayTicks);
+            }
+
+            if (!_persistedNameReapplyRequested)
                 return;
 
-            for (var i = _protectedModAggregateGroups.Count - 1; i >= 0; i--)
+            if (_persistedNameReapplyDelayTicks > 0)
             {
-                var group = _protectedModAggregateGroups[i];
-                if (!TrimProtectedGroupForDirectEdits(group))
+                _persistedNameReapplyDelayTicks--;
+                return;
+            }
+
+            if (_persistedNameReapplyCooldownTicks > 0)
+                return;
+
+            ReconcilePersistedNames(out _, out _);
+            _persistedNameReapplyRequested = false;
+            _persistedNameReapplyCooldownTicks = PersistedNameReapplyCooldownTicks;
+            _persistedNameFallbackAuditTicks = PersistedNameFallbackAuditTicks;
+        }
+
+        private void RequestPersistedNameReconciliation(int delayTicks)
+        {
+            if (_persistedNameReapplyRequested)
+            {
+                if (delayTicks < _persistedNameReapplyDelayTicks)
+                    _persistedNameReapplyDelayTicks = delayTicks;
+                return;
+            }
+
+            _persistedNameReapplyRequested = true;
+            _persistedNameReapplyDelayTicks = delayTicks;
+        }
+
+        private void ResetPersistedNameReconciliation()
+        {
+            _persistedNameCandidates.Clear();
+            _persistedNameReapplyRequested = false;
+            _persistedNameReapplyDelayTicks = 0;
+            _persistedNameReapplyCooldownTicks = 0;
+            _persistedNameFallbackAuditTicks = PersistedNameFallbackAuditTicks;
+        }
+
+        private void ReconcilePersistedNames(out int reapplied, out int skipped)
+        {
+            _persistedNameCandidates.Clear();
+            var settings = CurrentDisplaySettings();
+            skipped = 0;
+
+            foreach (var metadata in _repository.All)
+            {
+                if (string.IsNullOrWhiteSpace(metadata.OptionalCustomRoadName) && metadata.RouteNumbers.Count == 0)
+                    continue;
+
+                var segment = metadata.SegmentEntity;
+                if (!_validation.IsValidRoadSegment(segment))
                 {
-                    _pendingProtectedModAggregateValidation.Remove(group.Id);
-                    _protectedModAggregateGroups.RemoveAt(i);
+                    skipped++;
                     continue;
                 }
 
-                if (ProtectGroupDirtyStateBeforeAggregateSystem(group))
-                    _pendingProtectedModAggregateValidation.Add(group.Id);
+                var owner = GetAuthoritativeNameEntity(segment);
+                if (!IsValidRoadAggregateOwner(owner))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var expectedName = _resolver.Resolve(GetBaseName(segment), metadata, settings);
+                if (string.IsNullOrWhiteSpace(expectedName))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                expectedName = expectedName.Trim();
+                if (!_persistedNameCandidates.TryGetValue(owner, out var candidate))
+                {
+                    var currentName = GetCurrentAuthoritativeName(owner, string.Empty);
+                    _persistedNameCandidates.Add(owner, new PersistedNameCandidate
+                    {
+                        ExpectedName = expectedName,
+                        CurrentName = currentName,
+                        LastModifiedUtcTicks = metadata.LastModifiedUtcTicks,
+                        SegmentIndex = segment.Index,
+                        CurrentNameMatches = string.Equals(currentName, expectedName, System.StringComparison.Ordinal)
+                    });
+                    continue;
+                }
+
+                if (!string.Equals(candidate.ExpectedName, expectedName, System.StringComparison.Ordinal))
+                    candidate.HasConflict = true;
+
+                var currentMatches = string.Equals(candidate.CurrentName, expectedName, System.StringComparison.Ordinal);
+                var newerCandidate = metadata.LastModifiedUtcTicks > candidate.LastModifiedUtcTicks
+                    || (metadata.LastModifiedUtcTicks == candidate.LastModifiedUtcTicks && segment.Index < candidate.SegmentIndex);
+                if (currentMatches || (!candidate.CurrentNameMatches && newerCandidate))
+                {
+                    candidate.ExpectedName = expectedName;
+                    candidate.LastModifiedUtcTicks = metadata.LastModifiedUtcTicks;
+                    candidate.SegmentIndex = segment.Index;
+                }
+
+                candidate.CurrentNameMatches |= currentMatches;
+                _persistedNameCandidates[owner] = candidate;
             }
+
+            reapplied = 0;
+            var conflicts = 0;
+            foreach (var pair in _persistedNameCandidates)
+            {
+                var candidate = pair.Value;
+                if (candidate.HasConflict)
+                    conflicts++;
+
+                if (candidate.CurrentNameMatches
+                    || string.Equals(candidate.CurrentName, candidate.ExpectedName, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _nameSystem.SetCustomName(pair.Key, candidate.ExpectedName);
+                reapplied++;
+            }
+
+            if (reapplied > 0 || (Mod.IsVerboseLoggingEnabled && (conflicts > 0 || skipped > 0)))
+            {
+                var ownerCount = _persistedNameCandidates.Count;
+                var reappliedCount = reapplied;
+                var skippedCount = skipped;
+                Mod.log.Info(() => $"Road Naming: passive name reconciliation completed. Owners={ownerCount}, Reapplied={reappliedCount}, ConflictingOwners={conflicts}, SkippedSegments={skippedCount}.");
+            }
+
+            _persistedNameCandidates.Clear();
         }
 
         private bool IsModAggregateProtectionEnabled()
@@ -228,7 +399,7 @@ namespace AdvancedRoadNaming.Systems
         // When only a part of a street aggregate is selected, 
         // this function splits the aggregate into selected and the remainder groups, 
         // preserves the old name on the remainder and applies the new name only to the selected section.
-        private bool TryPartitionAggregateForSelectedEdges(Entity sourceAggregate, List<Entity> routeSegmentsInGroup, HashSet<Entity> selectedSet, string operation, string selectedFinalName, string originalVisibleName, bool scheduleStabilityCheck = true)
+        private bool TryPartitionAggregateForSelectedEdges(Entity sourceAggregate, List<Entity> routeSegmentsInGroup, HashSet<Entity> selectedSet, string operation, string selectedFinalName, string originalVisibleName)
         {
             if (sourceAggregate == Entity.Null || !EntityManager.Exists(sourceAggregate) || !EntityManager.HasBuffer<AggregateElement>(sourceAggregate))
                 return false;
@@ -287,9 +458,6 @@ namespace AdvancedRoadNaming.Systems
             }
 
             var verified = VerifyPartitionOwnership(sourceAggregate, selectedEdges, remainderEdges, selectedAggregateSet, remainderAggregateSet, selectedFinalName, originalVisibleName, operation);
-            if (scheduleStabilityCheck && selectedAggregateCount > 0 && remainderAggregateCount > 0)
-                RegisterAggregateStabilityCheck(sourceAggregate, selectedEdges, remainderEdges, selectedFinalName, originalVisibleName, operation);
-
             Mod.log.Info(() => $"Road Naming: aggregate partition complete. Operation={operation}, SourceAggregate={sourceAggregate.Index}, SelectedAggregatesCreated={selectedAggregateCount}, RemainderAggregates={remainderAggregateCount}, OwnershipVerified={verified}.");
             return selectedAggregateCount > 0 && remainderAggregateCount > 0 && verified;
         }
@@ -543,7 +711,7 @@ namespace AdvancedRoadNaming.Systems
                     continue;
                 }
 
-                TryPartitionAggregateForSelectedEdges(owner, pair.Value, selectedSet, "PostUpdateReapply:" + check.Operation, check.SelectedFinalName, check.OriginalVisibleName, false);
+                TryPartitionAggregateForSelectedEdges(owner, pair.Value, selectedSet, "PostUpdateReapply:" + check.Operation, check.SelectedFinalName, check.OriginalVisibleName);
             }
         }
 
@@ -957,7 +1125,6 @@ namespace AdvancedRoadNaming.Systems
                 return;
 
             TryCombineModRoadAggregates(selectedSegments, operation + "CombineRoadAggregates");
-            RebuildProtectedModAggregateGroupsFromModState();
         }
 
         // Optional post-apply cleanup: after the existing split pass has isolated selected
@@ -980,6 +1147,9 @@ namespace AdvancedRoadNaming.Systems
                 else
                     skippedGroups++;
             }
+
+            if (combinedGroups > 0)
+                CleanupEmptyManagedAggregates();
 
             Mod.log.Info(() => $"Road Naming: combine road aggregates pass completed. CandidateGroups={groups.Count}, CombinedGroups={combinedGroups}, SkippedGroups={skippedGroups}.");
         }
@@ -1131,8 +1301,9 @@ namespace AdvancedRoadNaming.Systems
                     if (EntityManager.GetBuffer<AggregateElement>(aggregate, true).Length != 0)
                         continue;
 
-                    EntityManager.DestroyEntity(aggregate);
-                    Mod.log.Info(() => $"Road Naming: removed empty managed aggregate owner. Aggregate={aggregate.Index}.");
+                    if (!EntityManager.HasComponent<Deleted>(aggregate))
+                        EntityManager.AddComponent<Deleted>(aggregate);
+                    Mod.log.Info(() => $"Road Naming: handed empty managed aggregate owner to vanilla deletion. Aggregate={aggregate.Index}.");
                 }
             }
             finally
@@ -1656,9 +1827,6 @@ namespace AdvancedRoadNaming.Systems
         {
             var safeName = string.IsNullOrWhiteSpace(finalName) ? $"Road Segment {nameEntity.Index}" : finalName.Trim();
             _nameSystem.SetCustomName(nameEntity, safeName);
-            EnsureRefreshTag<CustomName>(nameEntity);
-            EnsureRefreshTag<Updated>(nameEntity);
-            EnsureRefreshTag<BatchesUpdated>(nameEntity);
 
             if (EntityManager.HasBuffer<AggregateElement>(nameEntity))
             {
@@ -1689,9 +1857,6 @@ namespace AdvancedRoadNaming.Systems
 
             if (_nameSystem.TryGetCustomName(edge, out _))
                 _nameSystem.SetCustomName(edge, null);
-
-            if (EntityManager.HasComponent<CustomName>(edge))
-                EnsureRefreshTag<BatchesUpdated>(edge);
         }
 
         // Logs what sort of entity currently owns the visible label and what label buffers it has.
@@ -1742,7 +1907,6 @@ namespace AdvancedRoadNaming.Systems
             var title = BuildRouteRecordTitle(mode, inputValue, metadata);
             var route = _routeDatabase.CreateRoute(title, mode, inputValue, placement, waypoints, segmentList, streetNames);
             ApplyRouteCorridorMetadata(route, metadata);
-            RebuildProtectedModAggregateGroupsFromModState();
             Mod.log.Info(() => $"Road Naming: route saved. RouteId={route.RouteId}, Title='{route.DisplayTitle}', Mode={route.Mode}, Input='{route.BaseInputValue}', Segments={route.SegmentCount}, Waypoints={route.WaypointCount}, Corridor='{route.DerivedDisplayCorridor}', Streets='{BuildStreetSummary(route)}'.");
             return route;
         }
@@ -1890,7 +2054,7 @@ namespace AdvancedRoadNaming.Systems
                 AddEntityIfMissing(refreshSegments, normalizedFinalSegments[i]);
 
             ApplyResolvedMetadataToSegments(refreshSegments, "CommitSavedRouteReview");
-            RebuildProtectedModAggregateGroupsFromModState();
+            ApplyModAggregateMaintenance(normalizedFinalSegments, "CommitSavedRouteReview");
             route.UpdatedAtUtcTicks = System.DateTime.UtcNow.Ticks;
             route.LastAppliedUtcTicks = route.UpdatedAtUtcTicks;
             message = $"Committed saved route '{BuildRouteDisplayTitle(route)}' using {normalizedFinalSegments.Count} corrected segment(s).";
@@ -2010,7 +2174,6 @@ namespace AdvancedRoadNaming.Systems
 
             var replayedRoutes = RebuildSegmentsAfterRouteDeletion(route, affectedSegments);
             route.ClearStoredData();
-            RebuildProtectedModAggregateGroupsFromModState();
             message = affectedSegments.Count > 0
                 ? $"Deleted saved route {routeId} and reverted {affectedSegments.Count} affected road segment(s)."
                 : $"Deleted saved route {routeId}. No valid affected road segments remained to revert.";
@@ -3282,6 +3445,7 @@ namespace AdvancedRoadNaming.Systems
         {
             _repository.Clear();
             _routeDatabase.Clear();
+            ResetPersistedNameReconciliation();
             _protectedModAggregateGroups.Clear();
             _pendingProtectedModAggregateValidation.Clear();
             _nextProtectedModAggregateGroupId = 1;
@@ -3344,6 +3508,7 @@ namespace AdvancedRoadNaming.Systems
         {
             _repository.Clear();
             _routeDatabase.Clear();
+            ResetPersistedNameReconciliation();
             _aggregateStabilityChecks.Clear();
             _protectedModAggregateGroups.Clear();
             _pendingProtectedModAggregateValidation.Clear();
@@ -3397,7 +3562,6 @@ namespace AdvancedRoadNaming.Systems
                 Mod.log.Info(() => $"Road Naming: post-load name reapply starting. Attempt={_pendingPostLoadNameReapplyAttempts}, MetadataRecords={_repository.Count}, SavedRoutes={_routeDatabase.Count}.");
                 CleanupOrphanedMetadata();
                 ReapplyAllResolvedNames(out var reapplied, out var skipped);
-                RebuildProtectedModAggregateGroupsFromModState();
                 _pendingPostLoadNameReapply = false;
                 _pendingPostLoadNameReapplyDelayTicks = 0;
                 _pendingPostLoadNameReapplyAttempts = 0;
@@ -3668,25 +3832,7 @@ namespace AdvancedRoadNaming.Systems
         // Re-resolves all repository metadata into live segment names after a save load.
         private void ReapplyAllResolvedNames(out int reapplied, out int skipped)
         {
-            reapplied = 0;
-            skipped = 0;
-            var settings = CurrentDisplaySettings();
-            var segments = new List<Entity>();
-            foreach (var metadata in _repository.All)
-            {
-                if (!_validation.IsValidRoadSegment(metadata.SegmentEntity))
-                {
-                    skipped++;
-                    Mod.log.Warn(() => $"Road Naming: post-load reapply skipped missing or invalid segment. Segment={metadata.SegmentEntity.Index}.");
-                    continue;
-                }
-
-                segments.Add(metadata.SegmentEntity);
-                reapplied++;
-            }
-
-            if (segments.Count > 0)
-                ApplyAuthoritativeVisibleNames(segments, "PostLoadDeserializeReapply");
+            ReconcilePersistedNames(out reapplied, out skipped);
         }
 
         // Returns the mod's best idea of the segment's underlying base street name.
@@ -3802,48 +3948,6 @@ namespace AdvancedRoadNaming.Systems
                 || value.IndexOf(" One-Way Road", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        // Writes a custom name to the individual road edge,
-        // then tags the edge and aggregate for the right sort of visual refresh.
-        private void SetSegmentDisplayName(Entity segment, string displayName)
-        {
-            if (segment == Entity.Null || !_validation.IsValidRoadSegment(segment))
-            {
-                Mod.log.Warn(() => $"Skipped display-name update for invalid segment {segment}.");
-                return;
-            }
-
-            var safeDisplayName = string.IsNullOrWhiteSpace(displayName) ? $"Road Segment {segment.Index}" : displayName.Trim();
-
-            // CS2 integration point: this writes a custom name on the individual edge entity only.
-            // Do not write to Aggregated.m_Aggregate here, because that would rename every edge in the aggregate/street.
-            _nameSystem.SetCustomName(segment, safeDisplayName);
-            EnsureRefreshTag<CustomName>(segment);
-            // Avoid Updated on Aggregated road edges: AggregateSystem treats that as a topology/name-group recompute signal.
-            EnsureRefreshTag<BatchesUpdated>(segment);
-            RefreshAggregateWithoutRenaming(segment);
-
-            var customNameVisible = _nameSystem.TryGetCustomName(segment, out var storedCustomName);
-            var renderedName = _nameSystem.GetRenderedLabelName(segment);
-            if (!customNameVisible || !string.Equals(storedCustomName, safeDisplayName, System.StringComparison.Ordinal))
-                Mod.log.Warn(() => $"NameSystem did not echo the expected custom name for segment {segment.Index}. Expected='{safeDisplayName}', Stored='{storedCustomName ?? string.Empty}', Rendered='{renderedName ?? string.Empty}'.");
-            else
-                Mod.log.Info(() => $"Road Naming: display name updated. Segment={segment.Index}, Name='{safeDisplayName}', Rendered='{renderedName ?? string.Empty}'.");
-        }
-
-
-        // Refreshes the owning aggregate's label state without renaming the whole aggregate.
-        private void RefreshAggregateWithoutRenaming(Entity segment)
-        {
-            if (!EntityManager.HasComponent<Aggregated>(segment))
-                return;
-
-            var aggregate = EntityManager.GetComponentData<Aggregated>(segment).m_Aggregate;
-            if (aggregate == Entity.Null || !EntityManager.Exists(aggregate))
-                return;
-
-            EnsureRefreshTag<Updated>(aggregate);
-            EnsureRefreshTag<BatchesUpdated>(aggregate);
-        }
         // Small generic helper that adds a refresh tag component only if it is missing.
         private void EnsureRefreshTag<T>(Entity segment) where T : struct, IComponentData
         {
