@@ -221,8 +221,11 @@ function prefixDescription(prefix: string, t: (key: string) => string): string {
     if (prefix === "B") {
         return t("AdvancedRoadNaming.UI[PrefixDescriptionB]");
     }
+    if (prefix === "C") {
+        return t("AdvancedRoadNaming.UI[PrefixDescriptionC]");
+    }
 
-    return t("AdvancedRoadNaming.UI[PrefixDescriptionC]");
+    return t("AdvancedRoadNaming.UI[PrefixDescriptionI]");
 }
 
 function nextRouteNumberForPrefix(prefixType: PrefixType, customPrefix: string, routeInputs: string[]): string {

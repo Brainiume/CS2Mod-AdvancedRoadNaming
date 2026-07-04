@@ -1,10 +1,16 @@
 import { FOCUS_AUTO, FocusDisabled } from "cs2/input";
 import { Button } from "cs2/ui";
 import { panelActions } from "bindings";
+import { DelayedTooltip } from "components/DelayedTooltip";
 import { useAdvancedRoadNamingLocalization } from "localization";
 import styles from "./advancedRoadRoutesContent.module.scss";
 
-export function AdvancedRoadRoutesMenu() {
+interface AdvancedRoadRoutesMenuProps {
+    applyCooldownActive: boolean;
+    hasSavedRoutes: boolean;
+}
+
+export function AdvancedRoadRoutesMenu(props: AdvancedRoadRoutesMenuProps) {
     const { t } = useAdvancedRoadNamingLocalization();
 
     return (
@@ -34,6 +40,19 @@ export function AdvancedRoadRoutesMenu() {
                             <div className={styles.routeMenuLabel}>Manage Routes</div>
                         </div>
                     </Button>
+                </div>
+                <div className={styles.routeMenuWideActionRow}>
+                    <DelayedTooltip tooltip="Reapply every saved route to the current road network. Routes with missing roads are skipped.">
+                        <Button
+                            variant="flat"
+                            focusKey={FOCUS_AUTO}
+                            className={styles.routeMenuWideAction}
+                            disabled={!props.hasSavedRoutes || props.applyCooldownActive}
+                            onSelect={panelActions.reapplyAllSavedRoutes}
+                        >
+                            Reapply All Saved Routes
+                        </Button>
+                    </DelayedTooltip>
                 </div>
             </div>
         </FocusDisabled>

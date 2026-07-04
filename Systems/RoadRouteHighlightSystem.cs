@@ -32,10 +32,14 @@ namespace AdvancedRoadNaming.Systems
         private static readonly Color SavedWaypointColor = new Color(0.18f, 0.84f, 0.1f, 0.74f);
         private static readonly Color ManagedWaypointColor = new Color(0.18f, 0.84f, 0.1f, 0.34f);
         private static readonly Color SelectedManagedWaypointColor = new Color(0.18f, 0.84f, 0.1f, 0.94f);
+        private static readonly Color ActiveWaypointColor = new Color(0.08f, 0.52f, 1f, 0.98f);
+        private static readonly Color RemoveWaypointColor = new Color(1f, 0.12f, 0.08f, 0.98f);
         private static readonly Color WaypointHaloColor = new Color(0.92f, 1f, 0.9f, 0.24f);
         private static readonly Color SavedWaypointHaloColor = new Color(0.92f, 1f, 0.9f, 0.16f);
         private static readonly Color ManagedWaypointHaloColor = new Color(0.92f, 1f, 0.9f, 0.08f);
         private static readonly Color SelectedManagedWaypointHaloColor = new Color(0.92f, 1f, 0.9f, 0.24f);
+        private static readonly Color ActiveWaypointHaloColor = new Color(0.55f, 0.8f, 1f, 0.38f);
+        private static readonly Color RemoveWaypointHaloColor = new Color(1f, 0.65f, 0.6f, 0.4f);
 
         private RoadRouteToolSystem _toolSystem;
         private RoadRouteOverlayGeometrySystem _geometrySystem;
@@ -68,6 +72,42 @@ namespace AdvancedRoadNaming.Systems
             DrawNodes(buffer, _geometrySystem.PreviewNodes, WaypointHaloColor, WaypointHaloRadius);
             DrawNodes(buffer, _geometrySystem.PreviewNodes, WaypointColor, WaypointRadius);
             DrawGeometry(buffer, _geometrySystem.HoverCurves, HoverColor, HoverWidth);
+            DrawWaypointInteractionState(buffer);
+        }
+
+        private void DrawWaypointInteractionState(OverlayRenderSystem.Buffer buffer)
+        {
+            var waypoints = _toolSystem.Waypoints;
+            var hoveredIndex = _toolSystem.HoveredWaypointIndex;
+            if (hoveredIndex >= 0 && waypoints != null && hoveredIndex < waypoints.Count)
+            {
+                var hoveredPosition = waypoints[hoveredIndex].Position;
+                buffer.DrawCircle(ActiveWaypointHaloColor, hoveredPosition, WaypointHaloRadius);
+                buffer.DrawCircle(ActiveWaypointColor, hoveredPosition, WaypointRadius);
+            }
+
+            var activeEditIndex = _toolSystem.ActiveEditIndex;
+            if (_toolSystem.HasActiveMoveEdit && activeEditIndex >= 0)
+            {
+                var activeWaypoints = _toolSystem.PreviewWaypoints;
+                if (activeWaypoints == null || activeEditIndex >= activeWaypoints.Count)
+                    activeWaypoints = _toolSystem.Waypoints;
+
+                if (activeWaypoints != null && activeEditIndex < activeWaypoints.Count)
+                {
+                    var position = activeWaypoints[activeEditIndex].Position;
+                    buffer.DrawCircle(ActiveWaypointHaloColor, position, WaypointHaloRadius);
+                    buffer.DrawCircle(ActiveWaypointColor, position, WaypointRadius);
+                }
+            }
+
+            var removalIndex = hoveredIndex;
+            if (!_toolSystem.IsWaypointRemovalArmed || removalIndex < 0 || waypoints == null || removalIndex >= waypoints.Count)
+                return;
+
+            var removalPosition = waypoints[removalIndex].Position;
+            buffer.DrawCircle(RemoveWaypointHaloColor, removalPosition, WaypointHaloRadius);
+            buffer.DrawCircle(RemoveWaypointColor, removalPosition, WaypointRadius);
         }
 
         private void DrawManagedRoutes(OverlayRenderSystem.Buffer buffer)

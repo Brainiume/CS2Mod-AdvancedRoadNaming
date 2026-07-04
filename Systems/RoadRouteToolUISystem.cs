@@ -1,10 +1,12 @@
 using System;
 using Colossal.UI.Binding;
 using Game;
+using Game.Input;
 using Game.SceneFlow;
 using Game.Tools;
 using Game.UI;
 using AdvancedRoadNaming.Domain;
+using AdvancedRoadNaming.Settings;
 
 namespace AdvancedRoadNaming.Systems
 {
@@ -16,6 +18,10 @@ namespace AdvancedRoadNaming.Systems
         private ToolSystem _gameToolSystem;
         private DefaultToolSystem _defaultToolSystem;
         private ValueBinding<string> _stateBinding;
+        private ValueBinding<string> _panelShortcutCommandBinding;
+        private ProxyAction _toggleRenameAction;
+        private ProxyAction _toggleRoutesAction;
+        private int _panelShortcutSequence;
         private string _lastState;
         private bool _panelVisible;
         private bool _lastGameplayAvailable;
@@ -26,11 +32,15 @@ namespace AdvancedRoadNaming.Systems
             _toolSystem = World.GetOrCreateSystemManaged<RoadRouteToolSystem>();
             _gameToolSystem = World.GetOrCreateSystemManaged<ToolSystem>();
             _defaultToolSystem = World.GetOrCreateSystemManaged<DefaultToolSystem>();
+            _toggleRenameAction = Mod.Settings?.GetAction(AdvancedRoadNamingSettings.ToggleRenameActionName);
+            _toggleRoutesAction = Mod.Settings?.GetAction(AdvancedRoadNamingSettings.ToggleRoutesActionName);
 
             _lastState = BuildClosedState(false);
             _stateBinding = new ValueBinding<string>(PanelBindingGroup, "state", _lastState, ValueWriters.Create<string>(), System.Collections.Generic.EqualityComparer<string>.Default);
+            _panelShortcutCommandBinding = new ValueBinding<string>(PanelBindingGroup, "panelShortcutCommand", "0|none", ValueWriters.Create<string>(), System.Collections.Generic.EqualityComparer<string>.Default);
 
             AddBinding(_stateBinding);
+            AddBinding(_panelShortcutCommandBinding);
             AddBinding(new TriggerBinding(PanelBindingGroup, "activateRouteMenu", ActivateRouteMenu));
             AddBinding(new TriggerBinding(PanelBindingGroup, "activate", ActivateTool));
             AddBinding(new TriggerBinding(PanelBindingGroup, "activateSavedRoutes", ActivateSavedRoutes));
@@ -45,6 +55,7 @@ namespace AdvancedRoadNaming.Systems
             AddBinding(new TriggerBinding<long>(PanelBindingGroup, "selectSavedRoute", SelectSavedRoute, ValueReaders.Create<long>()));
             AddBinding(new TriggerBinding<long>(PanelBindingGroup, "previewSavedRoute", SelectSavedRoute, ValueReaders.Create<long>()));
             AddBinding(new TriggerBinding<long>(PanelBindingGroup, "reapplySavedRoute", ReapplySavedRoute, ValueReaders.Create<long>()));
+            AddBinding(new TriggerBinding(PanelBindingGroup, "reapplyAllSavedRoutes", ReapplyAllSavedRoutes));
             AddBinding(new TriggerBinding<long>(PanelBindingGroup, "deleteSavedRoute", DeleteSavedRoute, ValueReaders.Create<long>()));
             AddBinding(new TriggerBinding<string>(PanelBindingGroup, "updateSavedRouteInput", UpdateSavedRouteInput, ValueReaders.Create<string>()));
             AddBinding(new TriggerBinding<string>(PanelBindingGroup, "updateSavedRoutePlacement", UpdateSavedRoutePlacement, ValueReaders.Create<string>()));
@@ -55,6 +66,15 @@ namespace AdvancedRoadNaming.Systems
         protected override void OnUpdate()
         {
             var gameplayAvailable = IsGameplayUiContextAvailable();
+            SetShortcutActionsEnabled(gameplayAvailable);
+
+            if (gameplayAvailable)
+            {
+                if (_toggleRenameAction?.WasPerformedThisFrame() == true)
+                    ToggleRenameShortcut();
+                else if (_toggleRoutesAction?.WasPerformedThisFrame() == true)
+                    ToggleRoutesShortcut();
+            }
 
             if (_lastGameplayAvailable != gameplayAvailable)
             {
@@ -72,6 +92,53 @@ namespace AdvancedRoadNaming.Systems
                 _lastState = state;
                 _stateBinding.Update(state);
             }
+        }
+
+        private void SetShortcutActionsEnabled(bool enabled)
+        {
+            if (_toggleRenameAction != null)
+                _toggleRenameAction.shouldBeEnabled = enabled;
+            if (_toggleRoutesAction != null)
+                _toggleRoutesAction.shouldBeEnabled = enabled;
+        }
+
+        private void ToggleRenameShortcut()
+        {
+            var renameActive = _panelVisible
+                && IsToolOpen()
+                && _toolSystem?.Mode == RoadRouteToolMode.RenameSelectedSegments;
+            if (renameActive)
+            {
+                CancelTool();
+                PublishPanelShortcutCommand("close");
+                return;
+            }
+
+            ActivateTool();
+            _toolSystem?.SetMode(RoadRouteToolMode.RenameSelectedSegments);
+            PublishPanelShortcutCommand("rename");
+        }
+
+        private void ToggleRoutesShortcut()
+        {
+            var routesActive = _panelVisible
+                && IsToolOpen()
+                && _toolSystem?.Mode == RoadRouteToolMode.AssignMajorRouteNumber;
+            if (routesActive)
+            {
+                CancelTool();
+                PublishPanelShortcutCommand("close");
+                return;
+            }
+
+            ActivateRouteMenu();
+            PublishPanelShortcutCommand("routes");
+        }
+
+        private void PublishPanelShortcutCommand(string command)
+        {
+            _panelShortcutSequence++;
+            _panelShortcutCommandBinding?.Update($"{_panelShortcutSequence}|{command}");
         }
 
         private void ActivateTool()
@@ -107,6 +174,7 @@ namespace AdvancedRoadNaming.Systems
             try
             {
                 _gameToolSystem.activeTool = _toolSystem;
+                _toolSystem?.SetMode(RoadRouteToolMode.AssignMajorRouteNumber);
                 _toolSystem?.SetRouteMenuActive(true);
                 _panelVisible = true;
                 Mod.log.Info("Road Naming: selected-info panel activated the route menu.");
@@ -236,6 +304,12 @@ namespace AdvancedRoadNaming.Systems
         {
             Mod.log.Info(() => $"Road Naming: ReapplySavedRoute received. RouteId={routeId}.");
             _toolSystem?.ReapplySavedRoute(routeId);
+        }
+
+        private void ReapplyAllSavedRoutes()
+        {
+            Mod.log.Info("Road Naming: ReapplyAllSavedRoutes received.");
+            _toolSystem?.ReapplyAllSavedRoutes();
         }
 
         private void DeleteSavedRoute(long routeId)

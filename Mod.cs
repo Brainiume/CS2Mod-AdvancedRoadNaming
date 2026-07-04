@@ -46,6 +46,7 @@ namespace AdvancedRoadNaming
             RegisterUiAssetHost();
 
             Settings = new AdvancedRoadNamingSettings(this);
+            Settings.RegisterKeyBindings();
             AdvancedRoadNamingLocalization.Register(this, Settings);
             Settings.RegisterInOptionsUI();
             AssetDatabase.global.LoadSettings(AdvancedRoadNamingSettings.SettingsAssetName, Settings, new AdvancedRoadNamingSettings(this));

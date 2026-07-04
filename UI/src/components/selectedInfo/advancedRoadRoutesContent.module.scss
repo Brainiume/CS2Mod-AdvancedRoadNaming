@@ -102,6 +102,32 @@
     background-color: rgba(12, 26, 34, 0.9);
 }
 
+.routeMenuWideActionRow {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 12rem;
+}
+
+.routeMenuWideAction {
+    flex: 0 0 296rem;
+    width: 296rem;
+    height: 32rem;
+    min-height: 32rem;
+    margin: 0;
+    border: none;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.94);
+    background-color: rgba(0, 120, 191, 0.72);
+    font-size: var(--fontSizeS);
+    font-weight: 700;
+}
+
+.routeMenuWideAction:hover {
+    color: #fff;
+    background-color: rgba(0, 142, 220, 0.86);
+}
+
 .routeMenuIcon {
     width: 54rem;
     height: 54rem;
@@ -120,11 +146,16 @@
 }
 
 .manageContent {
+    min-height: 0;
+    max-height: calc(100vh - 230rem);
     padding-right: 18rem;
     padding-left: 18rem;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .manageHeader {
+    flex: 0 0 auto;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -160,9 +191,11 @@
 }
 
 .routeList {
+    flex: 0 1 auto;
     display: flex;
     flex-direction: column;
-    max-height: 132rem;
+    min-height: 0;
+    max-height: none;
     overflow-y: auto;
     margin-bottom: 8rem;
 }
@@ -210,6 +243,7 @@
 }
 
 .selectedRouteSummary {
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     margin: 4rem 0 0;
@@ -241,6 +275,7 @@
 }
 
 .noSelection {
+    flex: 0 0 auto;
     padding: 24rem 18rem;
     color: rgba(255, 255, 255, 0.7);
     font-size: var(--fontSizeS);
@@ -249,6 +284,7 @@
 }
 
 .manageContent .actions {
+    flex: 0 0 auto;
     justify-content: center;
     flex-wrap: wrap;
     padding-top: 10rem;

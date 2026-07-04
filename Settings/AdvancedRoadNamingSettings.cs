@@ -1,4 +1,5 @@
 using Colossal.IO.AssetDatabase;
+using Game.Input;
 using Game.Modding;
 using Game.Settings;
 using Game.UI.Widgets;
@@ -9,19 +10,25 @@ using Unity.Entities;
 namespace AdvancedRoadNaming.Settings
 {
     [FileLocation("ModsSettings\\AdvancedRoadNaming")]
-    [SettingsUITabOrder(GeneralTab)]
-    [SettingsUIGroupOrder(DisplayGroup, AdvancedGroup, AboutGroup, ResetGroup)]
-    [SettingsUIShowGroupName(DisplayGroup, AdvancedGroup, AboutGroup, ResetGroup)]
+    [SettingsUITabOrder(GeneralTab, KeybindingsTab)]
+    [SettingsUIGroupOrder(DisplayGroup, ShortcutGroup, AdvancedGroup, AboutGroup, ResetGroup)]
+    [SettingsUIShowGroupName(DisplayGroup, ShortcutGroup, AdvancedGroup, AboutGroup, ResetGroup)]
+    [SettingsUIKeyboardAction(ToggleRenameActionName, ActionType.Button, usages: new string[] { Usages.kDefaultUsage, Usages.kToolUsage })]
+    [SettingsUIKeyboardAction(ToggleRoutesActionName, ActionType.Button, usages: new string[] { Usages.kDefaultUsage, Usages.kToolUsage })]
     public sealed partial class AdvancedRoadNamingSettings : ModSetting
     {
         internal const string SettingsAssetName = "AdvancedRoadNaming";
 
         public const string GeneralTab = "General";
+        public const string KeybindingsTab = "Keybindings";
 
         public const string DisplayGroup = "Display";
+        public const string ShortcutGroup = "Shortcuts";
         public const string AdvancedGroup = "Advanced";
         public const string AboutGroup = "About";
         public const string ResetGroup = "Reset";
+        public const string ToggleRenameActionName = "ToggleRenameMode";
+        public const string ToggleRoutesActionName = "ToggleRoutesMenu";
 
         public AdvancedRoadNamingSettings(IMod mod)
             : base(mod)
@@ -46,6 +53,14 @@ namespace AdvancedRoadNaming.Settings
 
         [SettingsUISection(GeneralTab, DisplayGroup)]
         public bool ShowAdvancedRouteDetails { get; set; }
+
+        [SettingsUISection(KeybindingsTab, ShortcutGroup)]
+        [SettingsUIKeyboardBinding(BindingKeyboard.R, ToggleRenameActionName)]
+        public ProxyBinding ToggleRenameBinding { get; set; }
+
+        [SettingsUISection(KeybindingsTab, ShortcutGroup)]
+        [SettingsUIKeyboardBinding(BindingKeyboard.T, ToggleRoutesActionName)]
+        public ProxyBinding ToggleRoutesBinding { get; set; }
 
         [SettingsUISection(GeneralTab, AdvancedGroup)]
         public bool EnableLogging { get; set; }

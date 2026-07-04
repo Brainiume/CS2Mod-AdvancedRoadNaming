@@ -48,7 +48,7 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.7" />
+	<ModVersion Value="0.1.9" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -57,17 +57,19 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<RequiredDLC Value="" />
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-		Fixes
+		Road Routes
 		
-		* Update to 1.6.0f0
-		* Fixed Reapply not correctly working on roads with an existing route appplied.
-		* Added a short cooldown to Apply and Reapply buttons.
-		* Prevented manipulated routes from applying twice.
-		* Reduced conflicts with the game’s normal road handling reducing the chance of invisible road names (Invisible road names can be repaired by using the mod rename mode).
-		
+		- Improved waypoint manipulation
+		- Right clicking a waypoint now removes that waypoint instead of the last placed one
+		- Added “Reapply All Saved Routes” button.
+		- Improved route-list sizing and scrolling.
+		- Added configurable shortcuts:
+		 - R : Rename mode
+		 - T : Routes menu
+
 		Known Issues
 		
-		*   Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
+		- Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
 	" />
 	<!--<ChangeLog>
 	</ChangeLog>-->

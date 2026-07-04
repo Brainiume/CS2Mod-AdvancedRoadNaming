@@ -5,6 +5,7 @@ import { engine } from "engine";
 import { RouteNumberPlacement, RoutePanelScreen, RouteToolModeCommand } from "types";
 
 export const panelState$ = bindValue<string>(PANEL_GROUP, "state", DEFAULT_PANEL_STATE);
+export const panelShortcutCommand$ = bindValue<string>(PANEL_GROUP, "panelShortcutCommand", "0|none");
 export const selectedEntity$ = bindValue<Entity>("selectedInfo", "selectedEntity", { index: 0, version: 0 });
 export const advancedRoadNamingPanelOpen$ = bindLocalValue(false);
 export const advancedRoadNamingPanelKind$ = bindLocalValue<"rename" | "routes">("rename");
@@ -88,6 +89,9 @@ export const panelActions = {
     },
     reapplySavedRoute(routeId: number) {
         engine.trigger(PANEL_GROUP, "reapplySavedRoute", routeId);
+    },
+    reapplyAllSavedRoutes() {
+        engine.trigger(PANEL_GROUP, "reapplyAllSavedRoutes");
     },
     deleteSavedRoute(routeId: number) {
         engine.trigger(PANEL_GROUP, "deleteSavedRoute", routeId);

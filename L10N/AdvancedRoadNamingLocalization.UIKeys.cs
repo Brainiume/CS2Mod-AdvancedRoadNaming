@@ -16,6 +16,7 @@ namespace AdvancedRoadNaming.L10N
             public const string PrefixDescriptionA = "AdvancedRoadNaming.UI[PrefixDescriptionA]";
             public const string PrefixDescriptionB = "AdvancedRoadNaming.UI[PrefixDescriptionB]";
             public const string PrefixDescriptionC = "AdvancedRoadNaming.UI[PrefixDescriptionC]";
+            public const string PrefixDescriptionI = "AdvancedRoadNaming.UI[PrefixDescriptionI]";
             public const string CustomPrefixTooltip = "AdvancedRoadNaming.UI[CustomPrefixTooltip]";
             public const string PositionBeforeTooltip = "AdvancedRoadNaming.UI[PositionBeforeTooltip]";
             public const string PositionAfterTooltip = "AdvancedRoadNaming.UI[PositionAfterTooltip]";

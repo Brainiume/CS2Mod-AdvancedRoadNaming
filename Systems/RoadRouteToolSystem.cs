@@ -16,6 +16,7 @@ namespace AdvancedRoadNaming.Systems
     {
         public const string ToolIdentifier = "AdvancedRoadNaming.RouteBasedRoadNamingTool";
         private const int ApplyCooldownMilliseconds = 1000;
+        private const float WaypointDragThreshold = 2f;
         private static readonly long ApplyCooldownTimestampTicks = System.Math.Max(1L, System.Diagnostics.Stopwatch.Frequency * ApplyCooldownMilliseconds / 1000L);
 
         private SegmentMetadataSystem _metadataSystem;
@@ -35,6 +36,12 @@ namespace AdvancedRoadNaming.Systems
         private string _savedRoutesJsonCache = "[]";
         private SavedRouteReviewSession _savedRouteReview;
         private long _applyCooldownUntilTimestamp;
+        private bool _activeEditPointerDown;
+        private bool _activeEditStartedWithCurrentPress;
+        private bool _activeEditPointerMoved;
+        private float3 _activeEditPointerStartPosition;
+        private int _armedWaypointRemovalIndex = -1;
+        private bool _isWaypointRemovalArmed;
         private readonly System.Collections.Generic.List<Entity> _savedRoutePreviewSegments = new System.Collections.Generic.List<Entity>();
         private readonly System.Collections.Generic.List<RoadRouteWaypoint> _savedRoutePreviewWaypoints = new System.Collections.Generic.List<RoadRouteWaypoint>();
 
@@ -73,6 +80,10 @@ namespace AdvancedRoadNaming.Systems
         public bool HasHoveredRouteWaypoint => _selectionController?.HasHoveredRouteWaypoint ?? false;
 
         public int ActiveEditIndex => _selectionController?.ActiveEditIndex ?? -1;
+
+        public int HoveredWaypointIndex => _selectionController?.HoveredWaypointIndex ?? -1;
+
+        public bool IsWaypointRemovalArmed => _isWaypointRemovalArmed;
 
         public System.Collections.Generic.IReadOnlyList<Entity> SavedRoutePreviewSegments => _savedRoutePreviewSegments;
 
@@ -137,6 +148,7 @@ namespace AdvancedRoadNaming.Systems
             EnableToolActions(false);
             _isRunning = false;
             SetUnderground(false);
+            ResetPointerInteractionState();
             _selectionController?.SetHovered(Entity.Null);
         }
 
@@ -600,6 +612,29 @@ namespace AdvancedRoadNaming.Systems
             return result;
         }
 
+        public bool ReapplyAllSavedRoutes()
+        {
+            if (_savedRouteReview != null)
+            {
+                _statusMessage = "Finish or cancel the current saved-route edit before using Reapply All.";
+                return false;
+            }
+
+            if (!TryBeginApplyCooldown("ReapplyAllSavedRoutes"))
+                return false;
+
+            var result = _metadataSystem.ReapplyAllSavedRoutes(out var reapplied, out var failed, out var message);
+            _statusMessage = message;
+            if (reapplied > 0)
+            {
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
+
+            Mod.log.Info(() => $"Road Naming: Reapply All requested. Result={result}, Reapplied={reapplied}, Failed={failed}, Message='{message}'.");
+            return result;
+        }
+
         private bool TryBeginApplyCooldown(string operation)
         {
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -782,11 +817,15 @@ namespace AdvancedRoadNaming.Systems
             }
 
             var leftClickPressed = _isRunning && applyAction != null && applyAction.WasPressedThisFrame();
+            var leftClickHeld = _isRunning && applyAction != null && applyAction.IsPressed();
             var leftClickReleased = _isRunning && applyAction != null && applyAction.WasReleasedThisFrame();
             var rightClickPressed = _isRunning && Mouse.current?.rightButton.wasPressedThisFrame == true;
+            var rightClickHeld = _isRunning && Mouse.current?.rightButton.isPressed == true;
+            var rightClickReleased = _isRunning && Mouse.current?.rightButton.wasReleasedThisFrame == true;
 
             if (_routeMenuActive)
             {
+                ResetPointerInteractionState();
                 _selectionController.SetHovered(Entity.Null);
                 EnableToolActions(false);
                 return inputDeps;
@@ -794,6 +833,7 @@ namespace AdvancedRoadNaming.Systems
 
             if (_savedRoutesViewActive)
             {
+                ResetPointerInteractionState();
                 _selectionController.SetHovered(Entity.Null);
                 EnableToolActions(false);
                 if (Mouse.current?.leftButton.wasPressedThisFrame == true)
@@ -803,47 +843,64 @@ namespace AdvancedRoadNaming.Systems
             }
 
             UpdateHoveredWaypoint();
+            UpdateWaypointRemovalState(rightClickPressed, rightClickHeld);
 
             EnableToolActions(true);
 
+            if (rightClickReleased)
+            {
+                var removalIndex = _armedWaypointRemovalIndex;
+                var shouldRemove = removalIndex >= 0 && _selectionController.HoveredWaypointIndex == removalIndex;
+                _armedWaypointRemovalIndex = -1;
+                _isWaypointRemovalArmed = false;
+
+                if (shouldRemove && _selectionController.TryRemoveWaypoint(removalIndex))
+                {
+                    ResetActiveEditPointerState();
+                    MarkModifyReviewDirty();
+                    _statusMessage = _selectionController.BuildRouteInstruction();
+                    Mod.log.Info(() => $"Road Naming: hovered waypoint removed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
+                }
+
+                return inputDeps;
+            }
+
             if (_selectionController.HasActiveWaypointEdit)
             {
-                if (rightClickPressed)
+                if (leftClickPressed && !_activeEditPointerDown)
+                    BeginActiveEditPointer(false);
+
+                if (_activeEditPointerDown && leftClickHeld)
+                    UpdateActiveEditDragState();
+
+                if (leftClickReleased && _activeEditPointerDown)
                 {
-                    if (_selectionController.TryRemoveHoveredOrActiveWaypoint())
+                    var keepSelected = _activeEditStartedWithCurrentPress && !_activeEditPointerMoved;
+                    if (keepSelected)
                     {
-                        MarkModifyReviewDirty();
                         _statusMessage = _selectionController.BuildRouteInstruction();
-                        Mod.log.Info(() => $"Road Naming: waypoint removed during edit. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
+                        Mod.log.Info(() => $"Road Naming: waypoint selected for move. WaypointIndex={_selectionController.ActiveEditIndex}.");
                     }
                     else
                     {
-                        _selectionController.CancelActiveEdit();
-                        _statusMessage = _selectionController.BuildRouteInstruction();
-                        Mod.log.Info("Road Naming: waypoint edit canceled.");
+                        var committed = _selectionController.CommitActiveEdit();
+                        _statusMessage = committed ? _selectionController.BuildRouteInstruction() : _selectionController.Warning;
+                        if (committed)
+                        {
+                            MarkModifyReviewDirty();
+                            Mod.log.Info(() => $"Road Naming: waypoint edit committed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
+                        }
+                        else
+                        {
+                            Mod.log.Warn(() => $"Road Naming: waypoint edit rejected: {_selectionController.Warning}");
+                        }
                     }
 
+                    ResetActiveEditPointerState();
                     return inputDeps;
                 }
 
-                if (leftClickReleased)
-                {
-                    var committed = _selectionController.CommitActiveEdit();
-                    _statusMessage = committed ? _selectionController.BuildRouteInstruction() : _selectionController.Warning;
-                    if (committed)
-                    {
-                        MarkModifyReviewDirty();
-                        Mod.log.Info(() => $"Road Naming: waypoint edit committed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
-                    }
-                    else
-                    {
-                        Mod.log.Warn(() => $"Road Naming: waypoint edit rejected: {_selectionController.Warning}");
-                    }
-                }
-                else
-                {
-                    _statusMessage = _selectionController.BuildRouteInstruction();
-                }
+                _statusMessage = _selectionController.BuildRouteInstruction();
 
                 return inputDeps;
             }
@@ -853,6 +910,7 @@ namespace AdvancedRoadNaming.Systems
                 Mod.log.Info(() => $"Road Naming: click received. Hovered={HoveredSegment.Index}, Waypoints={WaypointCount}");
                 if (_selectionController.TryBeginEditFromHover())
                 {
+                    BeginActiveEditPointer(true);
                     _statusMessage = _selectionController.BuildRouteInstruction();
                     Mod.log.Info(() => $"Road Naming: waypoint edit started. ExistingWaypoint={_selectionController.HasHoveredRouteWaypoint}, Insertion={_selectionController.HasHoveredRouteInsertion}, Waypoints={WaypointCount}");
                 }
@@ -862,21 +920,50 @@ namespace AdvancedRoadNaming.Systems
                 }
             }
 
-            if (rightClickPressed)
-            {
-                if (_selectionController.TryRemoveHoveredOrActiveWaypoint())
-                {
-                    MarkModifyReviewDirty();
-                    _statusMessage = _selectionController.BuildRouteInstruction();
-                    Mod.log.Info(() => $"Road Naming: hovered waypoint removed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
-                }
-                else
-                {
-                    RemoveLastWaypoint();
-                }
-            }
-
             return inputDeps;
+        }
+
+        private void BeginActiveEditPointer(bool startedWithCurrentPress)
+        {
+            _activeEditPointerDown = true;
+            _activeEditStartedWithCurrentPress = startedWithCurrentPress;
+            _activeEditPointerMoved = false;
+            _activeEditPointerStartPosition = _selectionController.HoveredWaypoint?.Position ?? float3.zero;
+        }
+
+        private void UpdateActiveEditDragState()
+        {
+            if (_activeEditPointerMoved || !_selectionController.HoveredWaypoint.HasValue)
+                return;
+
+            var currentPosition = _selectionController.HoveredWaypoint.Value.Position;
+            if (math.distance(_activeEditPointerStartPosition, currentPosition) > WaypointDragThreshold)
+                _activeEditPointerMoved = true;
+        }
+
+        private void UpdateWaypointRemovalState(bool rightClickPressed, bool rightClickHeld)
+        {
+            if (rightClickPressed)
+                _armedWaypointRemovalIndex = _selectionController.HoveredWaypointIndex;
+
+            _isWaypointRemovalArmed = rightClickHeld
+                && _armedWaypointRemovalIndex >= 0
+                && _selectionController.HoveredWaypointIndex == _armedWaypointRemovalIndex;
+        }
+
+        private void ResetActiveEditPointerState()
+        {
+            _activeEditPointerDown = false;
+            _activeEditStartedWithCurrentPress = false;
+            _activeEditPointerMoved = false;
+            _activeEditPointerStartPosition = float3.zero;
+        }
+
+        private void ResetPointerInteractionState()
+        {
+            ResetActiveEditPointerState();
+            _armedWaypointRemovalIndex = -1;
+            _isWaypointRemovalArmed = false;
         }
 
 

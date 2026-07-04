@@ -2090,6 +2090,54 @@ namespace AdvancedRoadNaming.Systems
             return result;
         }
 
+        public bool ReapplyAllSavedRoutes(out int reapplied, out int failed, out string message)
+        {
+            reapplied = 0;
+            failed = 0;
+
+            var routes = new List<SavedRouteRecord>();
+            foreach (var route in _routeDatabase.Routes)
+            {
+                if (route != null && !route.IsDeleted)
+                    routes.Add(route);
+            }
+
+            if (routes.Count == 0)
+            {
+                message = "There are no saved routes to reapply.";
+                return false;
+            }
+
+            routes.Sort((left, right) =>
+            {
+                var compare = EffectiveApplyTicks(left).CompareTo(EffectiveApplyTicks(right));
+                return compare != 0 ? compare : left.RouteId.CompareTo(right.RouteId);
+            });
+
+            var routeIds = new List<long>(routes.Count);
+            for (var i = 0; i < routes.Count; i++)
+                routeIds.Add(routes[i].RouteId);
+
+            for (var i = 0; i < routeIds.Count; i++)
+            {
+                if (ReapplySavedRoute(routeIds[i], out var routeMessage))
+                {
+                    reapplied++;
+                }
+                else
+                {
+                    failed++;
+                    Mod.log.Warn(() => $"Road Naming: Reapply All skipped route. RouteId={routeIds[i]}, Message='{routeMessage}'.");
+                }
+            }
+
+            message = failed == 0
+                ? $"Reapplied all {reapplied} saved route(s)."
+                : $"Reapplied {reapplied} saved route(s); {failed} route(s) could not be reapplied.";
+            Mod.log.Info($"Road Naming: Reapply All complete. Reapplied={reapplied}, Failed={failed}.");
+            return reapplied > 0 && failed == 0;
+        }
+
         // Rebuilds a candidate path by pathfinding from waypoint to waypoint.
         // This is preview-first on purpose, because the rebuilt path may not be a perfect match.
         private bool TryBuildRouteCandidate(SavedRouteRecord route, out List<Entity> rebuilt, out string message)

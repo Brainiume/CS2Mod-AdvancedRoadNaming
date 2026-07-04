@@ -7,6 +7,7 @@ import {
     advancedRoadNamingPanelOpen$,
     advancedRoadRoutesScreen$,
     closeAdvancedRoadNamingPanel,
+    panelShortcutCommand$,
 } from "bindings";
 import { usePanelState } from "hooks/usePanelState";
 import { useAdvancedRoadNamingLocalization } from "localization";
@@ -34,7 +35,23 @@ export function AdvancedRoadNamingPanel() {
     const visible = useValue(advancedRoadNamingPanelOpen$);
     const panelKind = useValue(advancedRoadNamingPanelKind$);
     const routeScreen = useValue(advancedRoadRoutesScreen$);
+    const shortcutCommand = useValue(panelShortcutCommand$);
     const state = usePanelState();
+
+    useEffect(() => {
+        const command = shortcutCommand.split("|", 2)[1];
+        if (command === "rename") {
+            advancedRoadNamingPanelKind$.update("rename");
+            advancedRoadRoutesScreen$.update("menu");
+            advancedRoadNamingPanelOpen$.update(true);
+        } else if (command === "routes") {
+            advancedRoadNamingPanelKind$.update("routes");
+            advancedRoadRoutesScreen$.update("menu");
+            advancedRoadNamingPanelOpen$.update(true);
+        } else if (command === "close") {
+            advancedRoadNamingPanelOpen$.update(false);
+        }
+    }, [shortcutCommand]);
 
     useEffect(() => {
         if (!visible) {
@@ -68,7 +85,10 @@ export function AdvancedRoadNamingPanel() {
             visible={visible}
         >
             {isRoutePanel && routeScreen === "menu" ? (
-                <AdvancedRoadRoutesMenu />
+                <AdvancedRoadRoutesMenu
+                    applyCooldownActive={state.applyCooldownActive}
+                    hasSavedRoutes={state.savedRoutes.length > 0}
+                />
             ) : isRoutePanel && routeScreen === "manageRoutes" ? (
                 <ManageRoutesContent
                     routes={state.savedRoutes}
@@ -128,7 +148,7 @@ function SelectedInfoAdjacentPanel(props: SelectedInfoAdjacentPanelProps) {
                             </DelayedTooltip>
                         </div>
                     </div>
-                    <div className={selectedInfoThemeModule.content}>
+                    <div className={`${selectedInfoThemeModule.content} ${styles.panelContent}`}>
                         <div className={styles.body}>{props.children}</div>
                     </div>
                 </div>

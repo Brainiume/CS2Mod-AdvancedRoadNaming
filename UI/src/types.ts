@@ -13,9 +13,9 @@ export type SavedRouteStatus =
     | "RebuildNeeded"
     | "Deleted";
 
-export type PrefixType = "M" | "A" | "B" | "C" | "Custom";
+export type PrefixType = "M" | "A" | "B" | "C" | "I" | "Custom";
 
-export type SavedRouteFilter = "M" | "A" | "B" | "C" | "None";
+export type SavedRouteFilter = "M" | "A" | "B" | "C" | "I" | "None";
 
 export type RouteNumberPlacement = "BeforeBaseName" | "AfterBaseName";
 
@@ -67,5 +67,6 @@ export interface PanelState {
 export interface RouteCodeDraft {
     prefixType: PrefixType;
     customPrefix: string;
+    prefixNumberSeparator: "" | "-";
     numberPart: string;
 }

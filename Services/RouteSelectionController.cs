@@ -270,7 +270,7 @@ namespace AdvancedRoadNaming.Services
                     case WaypointEditMode.Insert:
                         return $"Insert mode active. Drag the new waypoint along a road, then release to place it. Right-click cancels. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
                     case WaypointEditMode.Move:
-                        return $"Move mode active. Drag the waypoint to reroute this section, then release to place it. Right-click removes this waypoint. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
+                        return $"Move mode active. Click a new road position or drag and release to place the blue waypoint. Right-click the waypoint to remove it. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
                 }
             }
 
@@ -315,7 +315,7 @@ namespace AdvancedRoadNaming.Services
             return TryCommitCandidateWaypoints(candidateWaypoints, out _);
         }
 
-        private bool TryRemoveWaypoint(int waypointIndex)
+        public bool TryRemoveWaypoint(int waypointIndex)
         {
             if (waypointIndex < 0 || waypointIndex >= _waypoints.Count)
             {
@@ -472,17 +472,20 @@ namespace AdvancedRoadNaming.Services
 
         private int FindHoveredWaypointIndex(RoadRouteWaypoint hoverWaypoint)
         {
+            var closestIndex = -1;
+            var closestDistance = ExistingWaypointSnapDistance;
             for (var i = 0; i < _waypoints.Count; i++)
             {
                 var existing = _waypoints[i];
-                if (existing.Segment != hoverWaypoint.Segment)
-                    continue;
-
-                if (math.distance(existing.Position, hoverWaypoint.Position) <= ExistingWaypointSnapDistance)
-                    return i;
+                var distance = math.distance(existing.Position, hoverWaypoint.Position);
+                if (distance <= closestDistance)
+                {
+                    closestIndex = i;
+                    closestDistance = distance;
+                }
             }
 
-            return -1;
+            return closestIndex;
         }
 
         private int FindHoveredInsertionIndex(RoadRouteWaypoint hoverWaypoint)

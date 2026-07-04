@@ -9,6 +9,7 @@
   "AdvancedRoadNaming.UI[PrefixDescriptionA]": "A-Road - Major arterial road connecting districts and suburbs. High traffic volume.",
   "AdvancedRoadNaming.UI[PrefixDescriptionB]": "B-Road - Secondary road serving as an alternative to A-roads. Moderate traffic volume.",
   "AdvancedRoadNaming.UI[PrefixDescriptionC]": "C-Road - Minor road connecting smaller points of interest. Low to moderate traffic.",
+  "AdvancedRoadNaming.UI[PrefixDescriptionI]": "Interstate Highway - Part of the American Interstate Highway System.",
   "AdvancedRoadNaming.UI[CustomPrefixTooltip]": "Use a custom route prefix that you type yourself.",
   "AdvancedRoadNaming.UI[PositionBeforeTooltip]": "Show the route number before the road name, for example M1 - Northern Hwy.",
   "AdvancedRoadNaming.UI[PositionAfterTooltip]": "Show the route number after the road name, for example Northern Hwy - M1.",

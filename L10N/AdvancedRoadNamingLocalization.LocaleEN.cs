@@ -22,8 +22,10 @@ namespace AdvancedRoadNaming.L10N
                 {
                     { _settings.GetSettingsLocaleID(), "Advanced Road Naming" },
                     { _settings.GetOptionTabLocaleID(AdvancedRoadNamingSettings.GeneralTab), "General" },
+                    { _settings.GetOptionTabLocaleID(AdvancedRoadNamingSettings.KeybindingsTab), "Key Bindings" },
 
                     { _settings.GetOptionGroupLocaleID(AdvancedRoadNamingSettings.DisplayGroup), "Display" },
+                    { _settings.GetOptionGroupLocaleID(AdvancedRoadNamingSettings.ShortcutGroup), "Shortcuts" },
                     { _settings.GetOptionGroupLocaleID(AdvancedRoadNamingSettings.AdvancedGroup), "Advanced" },
                     { _settings.GetOptionGroupLocaleID(AdvancedRoadNamingSettings.AboutGroup), "About" },
                     { _settings.GetOptionGroupLocaleID(AdvancedRoadNamingSettings.ResetGroup), "Reset" },
@@ -40,6 +42,10 @@ namespace AdvancedRoadNaming.L10N
                     { _settings.GetOrderingModeLocaleID(RouteNumberOrderingMode.Sorted), "Sorted" },
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.ShowAdvancedRouteDetails)), "Show Advanced Route Details" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.ShowAdvancedRouteDetails)), "Append technical saved-route details to the Route Info foldout in Manage Routes." },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.ToggleRenameBinding)), "Toggle Rename Mode" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.ToggleRenameBinding)), "Open or close Advanced Road Naming in Rename mode." },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.ToggleRoutesBinding)), "Toggle Routes Menu" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.ToggleRoutesBinding)), "Open or close the Advanced Road Routes menu." },
 
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Enable Debug Logging" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.EnableLogging)), "Write verbose diagnostic logs for Advanced Road Naming. Leave this unchecked during normal play." },
@@ -68,6 +74,7 @@ namespace AdvancedRoadNaming.L10N
                     { UIKeys.PrefixDescriptionA, "A-Road - Major arterial road connecting districts and suburbs. High traffic volume." },
                     { UIKeys.PrefixDescriptionB, "B-Road - Secondary road serving as an alternative to A-roads. Moderate traffic volume." },
                     { UIKeys.PrefixDescriptionC, "C-Road - Minor road connecting smaller points of interest. Low to moderate traffic." },
+                    { UIKeys.PrefixDescriptionI, "Interstate Highway - Part of the American Interstate Highway System." },
                     { UIKeys.CustomPrefixTooltip, "Use a custom route prefix that you type yourself." },
                     { UIKeys.PositionBeforeTooltip, "Show the route number before the road name, for example M1 - Northern Hwy." },
                     { UIKeys.PositionAfterTooltip, "Show the route number after the road name, for example Northern Hwy - M1." },
