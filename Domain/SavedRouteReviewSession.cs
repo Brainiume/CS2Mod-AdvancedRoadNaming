@@ -15,6 +15,10 @@ namespace AdvancedRoadNaming.Domain
 
         public RouteNumberPlacement RouteNumberPlacement { get; set; } = RouteNumberPlacement.AfterBaseName;
 
+        public RouteShieldStyle RouteShieldStyle { get; set; } = RouteShieldStyle.None;
+
+        public string RouteShieldImportId { get; set; }
+
         public string Message { get; set; }
 
         public bool IsDirty { get; set; }

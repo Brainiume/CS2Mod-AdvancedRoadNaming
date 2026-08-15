@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { useValue } from "cs2/api";
 import { Portal } from "cs2/ui";
 import { DelayedTooltip } from "components/DelayedTooltip";
@@ -8,9 +8,12 @@ import {
     advancedRoadRoutesScreen$,
     closeAdvancedRoadNamingPanel,
     panelShortcutCommand$,
+    routeStatistics$,
 } from "bindings";
 import { usePanelState } from "hooks/usePanelState";
+import { useBindingValue } from "hooks/useBindingValue";
 import { useAdvancedRoadNamingLocalization } from "localization";
+import { RouteStatistics } from "types";
 import {
     closeButtonClass,
     closeButtonImageClass,
@@ -32,11 +35,14 @@ interface SelectedInfoAdjacentPanelProps {
 }
 
 export function AdvancedRoadNamingPanel() {
-    const visible = useValue(advancedRoadNamingPanelOpen$);
+    const localVisible = useValue(advancedRoadNamingPanelOpen$);
     const panelKind = useValue(advancedRoadNamingPanelKind$);
     const routeScreen = useValue(advancedRoadRoutesScreen$);
     const shortcutCommand = useValue(panelShortcutCommand$);
     const state = usePanelState();
+    const backendOpenSeenRef = useRef(false);
+    const visible = localVisible && (state.isOpen || !backendOpenSeenRef.current);
+    const routeStatistics = useBindingValue<RouteStatistics | null>(routeStatistics$, null);
 
     useEffect(() => {
         const command = shortcutCommand.split("|", 2)[1];
@@ -52,6 +58,23 @@ export function AdvancedRoadNamingPanel() {
             advancedRoadNamingPanelOpen$.update(false);
         }
     }, [shortcutCommand]);
+
+    useEffect(() => {
+        if (!localVisible) {
+            backendOpenSeenRef.current = false;
+            return;
+        }
+
+        if (state.isOpen) {
+            backendOpenSeenRef.current = true;
+            return;
+        }
+
+        if (backendOpenSeenRef.current) {
+            backendOpenSeenRef.current = false;
+            advancedRoadNamingPanelOpen$.update(false);
+        }
+    }, [localVisible, state.isOpen]);
 
     useEffect(() => {
         if (!visible) {
@@ -72,11 +95,18 @@ export function AdvancedRoadNamingPanel() {
         return () => document.removeEventListener("keydown", closeOnEscape, true);
     }, [visible]);
 
+    useEffect(() => {
+        if (panelKind === "rename" && !state.savedRenameRoutesEnabled && routeScreen !== "newRoute") {
+            advancedRoadRoutesScreen$.update("newRoute");
+        }
+    }, [panelKind, routeScreen, state.savedRenameRoutesEnabled]);
+
     if (!visible) {
         return null;
     }
 
     const isRoutePanel = panelKind === "routes";
+    const savedWorkflowEnabled = isRoutePanel || state.savedRenameRoutesEnabled;
 
     return (
         <SelectedInfoAdjacentPanel
@@ -84,24 +114,29 @@ export function AdvancedRoadNamingPanel() {
             icon={isRoutePanel ? "coui://rst/Route.svg" : "coui://rst/PencilEdit.svg"}
             visible={visible}
         >
-            {isRoutePanel && routeScreen === "menu" ? (
+            {savedWorkflowEnabled && routeScreen === "menu" ? (
                 <AdvancedRoadRoutesMenu
+                    kind={isRoutePanel ? "routes" : "rename"}
                     applyCooldownActive={state.applyCooldownActive}
                     hasSavedRoutes={state.savedRoutes.length > 0}
                 />
-            ) : isRoutePanel && routeScreen === "manageRoutes" ? (
+            ) : savedWorkflowEnabled && routeScreen === "manageRoutes" ? (
                 <ManageRoutesContent
+                    kind={isRoutePanel ? "routes" : "rename"}
                     routes={state.savedRoutes}
                     selectedRouteId={state.selectedSavedRouteId}
                     manipulateMode={state.savedRouteManipulateMode}
                     reviewRouteId={state.savedRouteReviewRouteId}
                     showAdvancedRouteDetails={state.showAdvancedRouteDetails}
                     applyCooldownActive={state.applyCooldownActive}
+                    statisticsEnabled={state.routeStatisticsEnabled}
+                    routeStatistics={routeStatistics}
                 />
             ) : isRoutePanel ? (
                 <AdvancedRoadRoutesContent
                     input={state.input}
                     routeNumberPlacement={state.routeNumberPlacement}
+                    routeShieldStyle={state.routeShieldStyle}
                     savedRouteInputs={state.savedRoutes.map((route) => route.input)}
                     canUndo={state.waypointCount > 0}
                     canClear={state.waypointCount > 0 || state.selectedSegments > 0 || !!state.input}
@@ -113,7 +148,7 @@ export function AdvancedRoadNamingPanel() {
                     undergroundMode={state.undergroundMode}
                     canUndo={state.waypointCount > 0}
                     canClear={state.waypointCount > 0 || state.selectedSegments > 0 || !!state.input}
-                    canApply={state.selectedSegments > 0 && !state.applyCooldownActive}
+                    canApply={state.selectedSegments > 0 && state.input.trim().length > 0 && !state.applyCooldownActive}
                 />
             )}
         </SelectedInfoAdjacentPanel>

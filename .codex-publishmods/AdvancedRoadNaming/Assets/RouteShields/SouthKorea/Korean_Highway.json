@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "SouthKoreaHighway",
+  "name": "South Korea Highway",
+  "region": "South Korea",
+  "system": "Motorway",
+  "svg": "Korean_Highway.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 2.5, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

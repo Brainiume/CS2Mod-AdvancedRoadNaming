@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "AustralianNationalShield",
+  "name": "Australian National Route",
+  "region": "Australia / New Zealand",
+  "system": "National",
+  "svg": "australian-national.svg",
+  "widthRem": 41.8,
+  "heightRem": 42.2,
+  "textLayers": [
+    { "id": "header", "source": "literal", "text": "NATIONAL", "color": "#FFA80A", "fontSizeRem": 5.5, "offsetXRem": 0, "offsetYRem": -12.2, "scalePercent": 90, "rotationDegrees": 0 },
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFA80A", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 5, "scalePercent": 100, "rotationDegrees": 0 }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "CanadaHighway",
+  "name": "Ontario Highway",
+  "region": "Canada",
+  "system": "State",
+  "svg": "Ontario_blank.svg",
+  "widthRem": 27,
+  "heightRem": 39,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 5, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

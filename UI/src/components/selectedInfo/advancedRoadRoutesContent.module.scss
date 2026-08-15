@@ -145,6 +145,28 @@
     white-space: normal;
 }
 
+.renameVariant .wipNotice {
+    color: rgb(210, 174, 255);
+}
+
+.renameVariant .routeMenuCard {
+    box-sizing: border-box;
+    border: 1rem solid rgba(168, 85, 247, 0.34);
+}
+
+.renameVariant .routeMenuCard:hover {
+    border-color: rgba(200, 150, 255, 0.76);
+    background-color: rgba(67, 30, 100, 0.72);
+}
+
+.renameVariant .routeMenuWideAction {
+    background-color: rgba(132, 55, 205, 0.82);
+}
+
+.renameVariant .routeMenuWideAction:hover {
+    background-color: rgba(168, 85, 247, 0.92);
+}
+
 .manageContent {
     min-height: 0;
     max-height: calc(100vh - 230rem);
@@ -190,6 +212,59 @@
     flex-direction: column;
 }
 
+.routeFilterRow {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0 0 8rem;
+}
+
+.routeFilterChip {
+    flex: 0 0 38rem;
+    width: 38rem;
+    min-width: 38rem;
+    max-width: 38rem;
+    height: 26rem;
+    min-height: 26rem;
+    max-height: 26rem;
+    padding: 0 5rem;
+    margin: 0 5rem 0 0;
+    border: none;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.88);
+    background-color: rgba(4, 14, 22, 0.68);
+    font-size: var(--fontSizeXS);
+    font-weight: 700;
+    line-height: 26rem;
+    text-align: center;
+}
+
+.routeFilterChip:first-child {
+    flex-basis: 50rem;
+    width: 50rem;
+    min-width: 50rem;
+    max-width: 50rem;
+}
+
+.routeFilterChip:hover {
+    color: #fff;
+    background-color: rgba(12, 26, 34, 0.9);
+}
+
+.routeFilterChipSelected {
+    color: #fff;
+    background-color: rgba(0, 120, 191, 0.72);
+}
+
+.routeFilterEmpty {
+    padding: 16rem 10rem;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: var(--fontSizeS);
+    line-height: 20rem;
+    text-align: center;
+}
+
 .routeList {
     flex: 0 1 auto;
     display: flex;
@@ -222,6 +297,20 @@
 .routeListItemSelected {
     border-color: rgba(67, 202, 247, 0.78);
     background-color: rgba(0, 120, 191, 0.38);
+}
+
+.renameVariant .routeListItemSelected {
+    border-color: rgba(194, 136, 255, 0.82);
+    background-color: rgba(116, 45, 178, 0.46);
+}
+
+.renameVariant .selectedRouteTitle {
+    box-sizing: border-box;
+    border-left: 3rem solid rgb(168, 85, 247);
+}
+
+.renameVariant .textInput:focus {
+    border-color: rgba(194, 136, 255, 0.96);
 }
 
 .routeListTitle {
@@ -259,6 +348,63 @@
     line-height: 22rem;
 }
 
+.cleanupWarning {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    padding: 10rem;
+    margin: 0 0 6rem;
+    box-sizing: border-box;
+    border: 1rem solid rgba(255, 205, 112, 0.36);
+    border-radius: 4rem;
+    background-color: rgba(78, 42, 0, 0.32);
+}
+
+.cleanupWarningText {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    color: rgba(255, 222, 154, 0.96);
+    font-size: var(--fontSizeS);
+    line-height: 19rem;
+    text-align: left;
+    white-space: normal;
+    word-break: normal;
+}
+
+.cleanupWarningActions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 8rem;
+}
+
+.cleanupWarningButton {
+    flex: 0 0 82rem;
+    width: 82rem;
+    min-width: 82rem;
+    max-width: 82rem;
+    height: 28rem;
+    min-height: 28rem;
+    max-height: 28rem;
+    margin: 0 0 0 6rem;
+    border: none;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.94);
+    background-color: rgba(0, 0, 0, 0.72);
+    font-size: var(--fontSizeXS);
+    font-weight: 700;
+    line-height: 28rem;
+    text-align: center;
+}
+
+.cleanupWarningButton:hover {
+    color: #fff;
+    background-color: rgba(12, 26, 34, 0.9);
+}
+
 .selectedRouteSummary .routeFoldouts {
     margin: 0;
     padding: 0;
@@ -267,6 +413,48 @@
 .selectedRouteSummary .routePanelRow {
     margin-right: 0 !important;
     margin-left: 0 !important;
+}
+
+.statisticsContent {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.statisticsStatus,
+.statisticsWarning {
+    padding: 12rem 18rem;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: var(--fontSizeS);
+    line-height: 20rem;
+    text-align: center;
+}
+
+.statisticsWarning {
+    color: rgba(255, 205, 112, 0.94);
+}
+
+.routeButtonRow.statisticsMetricRow {
+    width: auto;
+    padding: 8rem 12rem 0;
+    justify-content: flex-start;
+}
+
+.statisticsMetricRow + .statisticsMetricRow {
+    padding-top: 5rem;
+}
+
+.statisticsMetricRow .routeButtonCell {
+    flex: 0 0 172rem;
+    width: 172rem;
+    min-width: 172rem;
+    max-width: 172rem;
+}
+
+.statisticsMetricRow .routeChoiceButton {
+    width: 172rem;
+    min-width: 172rem;
+    max-width: 172rem;
 }
 
 .routeDetails {
@@ -286,23 +474,29 @@
 .manageContent .actions {
     flex: 0 0 auto;
     justify-content: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding-top: 10rem;
     padding-bottom: 8rem;
 }
 
 .manageContent .actionButtonCell {
-    flex: 0 0 84rem;
-    min-width: 84rem;
+    flex: 1 1 0;
+    min-width: 0;
     max-width: 84rem;
     margin: 3rem;
 }
 
+.manageContent .actionButtonCell + .actionButtonCell {
+    margin-left: 3rem;
+}
+
 .manageContent .actionButton {
-    flex: 0 0 84rem;
-    width: 84rem;
-    min-width: 84rem;
-    max-width: 84rem;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding-right: 3rem;
+    padding-left: 3rem;
     font-size: var(--fontSizeXS);
 }
 
@@ -468,6 +662,154 @@
     min-width: 88rem;
 }
 
+.routeShieldRow {
+    height: auto !important;
+    min-height: 0;
+    padding-top: 6rem !important;
+    padding-bottom: 6rem !important;
+    overflow: visible !important;
+    align-items: flex-start;
+}
+
+.routeShieldControls {
+    display: flex;
+    flex-direction: column;
+    width: 340rem;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.routeShieldGrid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 340rem;
+    max-width: 100%;
+}
+
+.catalogQuickGrid {
+    display: flex;
+    flex-wrap: wrap;
+    width: 340rem;
+    max-width: 100%;
+    margin-top: 6rem;
+}
+
+.catalogPreviewButton {
+    width: 70rem;
+    height: 54rem;
+    margin-right: 5rem;
+    margin-bottom: 5rem;
+    padding: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1rem solid rgba(255, 255, 255, 0.08);
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(4, 14, 22, 0.68);
+}
+
+.catalogPreviewButton:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    background-color: rgba(12, 26, 34, 0.9);
+}
+
+.catalogPreviewButton.active {
+    border-color: rgba(87, 211, 255, 0.88);
+    background-color: rgba(0, 120, 191, 0.72);
+}
+
+.browseShieldsButton {
+    flex: 0 0 36rem;
+    width: 340rem;
+    max-width: 100%;
+    height: 36rem;
+    min-height: 36rem;
+    max-height: 36rem;
+    padding: 0 12rem;
+    margin-top: 4rem;
+    border: none;
+    border-radius: 4rem;
+    color: rgba(255, 255, 255, 0.92);
+    background-color: rgba(4, 14, 22, 0.68);
+    font-size: var(--fontSizeS);
+    font-weight: 700;
+    line-height: 36rem;
+}
+
+.browseShieldsButton:hover {
+    color: #fff;
+    background-color: rgba(12, 26, 34, 0.9);
+}
+
+.routeShieldCell {
+    flex: 0 0 60rem;
+    width: 60rem;
+    min-width: 60rem;
+    max-width: 60rem;
+    height: 54rem;
+    min-height: 54rem;
+    max-height: 54rem;
+    margin: 0 4rem 6rem 0;
+}
+
+.routeShieldButton {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 54rem;
+    min-height: 54rem;
+    max-height: 54rem;
+    padding: 4rem;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.noShieldPreview {
+    position: relative;
+    width: 32rem;
+    height: 32rem;
+    box-sizing: border-box;
+    border: 3rem solid rgba(255, 255, 255, 0.78);
+    border-radius: 50%;
+}
+
+.noShieldSlash {
+    position: absolute;
+    left: 2rem;
+    top: 12rem;
+    width: 22rem;
+    height: 3rem;
+    background-color: rgba(255, 255, 255, 0.78);
+    transform: rotate(-45deg);
+}
+
+.australianRectanglePreview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42rem;
+    max-width: 92rem;
+    height: 36rem;
+    padding: 3rem 8rem;
+    box-sizing: border-box;
+    border-radius: 6rem;
+    color: #ffa80a;
+    background-color: #17653b;
+    box-shadow: inset 0 0 0 1rem #17653b, inset 0 0 0 3.2rem #fff, inset 0 0 0 4.2rem #17653b;
+    font-size: 22rem;
+    font-weight: 700;
+    line-height: 36rem;
+    white-space: nowrap;
+    coh-font-fit-mode: shrink;
+}
+
 .resultText {
     width: 230rem;
     color: rgb(236, 237, 237);
@@ -533,6 +875,10 @@
 .actionButton.activeActionButton {
     color: #fff;
     background-color: rgba(56, 128, 170, 0.9);
+}
+
+.renameVariant .actionButton.activeActionButton {
+    background-color: rgba(132, 55, 205, 0.92);
 }
 
 .actionButton:disabled {

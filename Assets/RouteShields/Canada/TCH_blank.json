@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "CanadaTransCanada",
+  "name": "Trans-Canada Highway",
+  "region": "Canada",
+  "system": "National",
+  "svg": "TCH_blank.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 0, "scalePercent": 68, "rotationDegrees": 0 }
+  ]
+}

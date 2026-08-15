@@ -2,6 +2,7 @@ import { ModRegistrar, ModuleRegistry } from "cs2/modding";
 import { initialize } from "components/vanilla/Components";
 import { extendRoadSelectionInfoSection } from "components/selectedInfo/RoadSelectionInfoSection";
 import { AdvancedRoadNamingPanel } from "components/selectedInfo/AdvancedRoadNamingPanel";
+import { RouteShieldOverlay } from "components/routeShields/RouteShieldOverlay";
 
 
 const register: ModRegistrar = (moduleRegistry: ModuleRegistry) => {
@@ -12,6 +13,7 @@ const register: ModRegistrar = (moduleRegistry: ModuleRegistry) => {
         extendRoadSelectionInfoSection,
     );
     moduleRegistry.append("Game", AdvancedRoadNamingPanel);
+    moduleRegistry.append("Game", RouteShieldOverlay);
 };
 
 export default register;

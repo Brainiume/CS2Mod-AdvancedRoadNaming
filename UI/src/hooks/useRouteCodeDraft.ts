@@ -12,27 +12,27 @@ export function normalizeToken(value: string): string {
 export function parseRouteCode(value: string): RouteCodeDraft {
     const normalized = normalizeToken(value);
     if (!normalized) {
-        return { prefixType: "M", customPrefix: "", prefixNumberSeparator: "", numberPart: "" };
+        return { prefixType: "M", customPrefix: "", numberPart: "" };
     }
 
     const prefixMatch = normalized.match(/^([A-Z]+)(-?)(.*)$/);
     if (prefixMatch) {
         const prefix = prefixMatch[1];
-        const prefixType = presetPrefixes.has(prefix) ? prefix as PrefixType : "Custom";
+        const hasCustomSeparator = prefixMatch[2] === "-";
+        const prefixType = !hasCustomSeparator && presetPrefixes.has(prefix) ? prefix as PrefixType : "Custom";
         return {
             prefixType,
-            customPrefix: prefixType === "Custom" ? prefix : "",
-            prefixNumberSeparator: prefixMatch[2] === "-" ? "-" : "",
+            customPrefix: prefixType === "Custom" ? `${prefix}${hasCustomSeparator ? "-" : ""}` : "",
             numberPart: prefixMatch[3],
         };
     }
 
-    return { prefixType: "Custom", customPrefix: "", prefixNumberSeparator: "", numberPart: normalized };
+    return { prefixType: "Custom", customPrefix: "", numberPart: normalized };
 }
 
 export function composeRouteCode(draft: RouteCodeDraft): string {
     const prefix = draft.prefixType === "Custom" ? normalizeToken(draft.customPrefix) : draft.prefixType;
-    return `${prefix}${draft.prefixNumberSeparator}${normalizeToken(draft.numberPart)}`;
+    return `${prefix}${normalizeToken(draft.numberPart)}`;
 }
 
 export function useRouteCodeDraft(input: string, onChange: (value: string) => void = panelActions.setInput) {

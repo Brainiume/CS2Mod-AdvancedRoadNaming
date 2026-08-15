@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "BlackWhiteShield",
+  "name": "Australian National Route Black and White",
+  "region": "Australia / New Zealand",
+  "system": "National",
+  "svg": "australian-black-white.svg",
+  "widthRem": 31,
+  "heightRem": 38,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 20, "offsetXRem": 0, "offsetYRem": -2, "scalePercent": 76, "rotationDegrees": 0 }
+  ]
+}

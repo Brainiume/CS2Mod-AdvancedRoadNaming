@@ -1,7 +1,7 @@
 import { panelState$ } from "bindings";
 import { DEFAULT_PANEL_STATE } from "constants";
 import { useBindingValue } from "hooks/useBindingValue";
-import { PanelState, RouteToolMode, SavedRoute } from "types";
+import { PanelState, RouteShieldSelection, RouteShieldStyle, RouteToolMode, SavedRoute } from "types";
 
 const DEFAULT_STATE: PanelState = {
     isOpen: false,
@@ -15,6 +15,7 @@ const DEFAULT_STATE: PanelState = {
     waypointCount: 0,
     savedRoutes: [],
     routeNumberPlacement: "AfterBaseName",
+    routeShieldStyle: "None",
     undergroundMode: false,
     selectedSavedRouteId: 0,
     savedRoutesViewActive: false,
@@ -22,12 +23,50 @@ const DEFAULT_STATE: PanelState = {
     savedRouteReviewRouteId: 0,
     showAdvancedRouteDetails: false,
     applyCooldownActive: false,
+    routeStatisticsEnabled: true,
+    savedRenameRoutesEnabled: true,
 };
 
 const MODES: Record<string, RouteToolMode> = {
     RenameSelectedSegments: "RenameSelectedSegments",
     AssignMajorRouteNumber: "AssignMajorRouteNumber",
 };
+
+const SHIELD_STYLES: Record<string, RouteShieldStyle> = {
+    None: "None",
+    AustralianMRectangle: "AustralianMRectangle",
+    AustralianARectangle: "AustralianARectangle",
+    AustralianBRectangle: "AustralianBRectangle",
+    AustralianCRectangle: "AustralianCRectangle",
+    AustralianNationalShield: "AustralianNationalShield",
+    BlueHighwayShield: "BlueHighwayShield",
+    BlackWhiteShield: "BlackWhiteShield",
+    InterstateGeneric: "InterstateGeneric",
+    InterstateState: "InterstateState",
+    USInterstate: "USInterstate",
+    USRoute: "USRoute",
+    CanadaTransCanada: "CanadaTransCanada",
+    CanadaHighway: "CanadaHighway",
+    UKARoad: "UKARoad",
+    FranceAutoroute: "FranceAutoroute",
+    GermanyAutobahn: "GermanyAutobahn",
+    JapanNational: "JapanNational",
+    SouthKoreaHighway: "SouthKoreaHighway",
+    MalaysiaExpressway: "MalaysiaExpressway",
+    ColombiaNational: "ColombiaNational",
+    MexicoFederal: "MexicoFederal",
+    IndiaNational: "IndiaNational",
+    SouthAfricaRegional: "SouthAfricaRegional",
+    NewZealandStateHighway: "NewZealandStateHighway",
+    Imported: "Imported",
+};
+
+function parseShieldSelection(value: string): RouteShieldSelection {
+    if (value.startsWith("Imported:") && value.length > "Imported:".length) {
+        return value as RouteShieldSelection;
+    }
+    return SHIELD_STYLES[value] ?? "None";
+}
 
 function splitState(raw: string): string[] {
     const parts: string[] = [];
@@ -94,6 +133,7 @@ export function parsePanelState(raw: string): PanelState {
         waypointCount: toNumber(parts[8] ?? "0"),
         savedRoutes: parseSavedRoutes(parts[9] ?? "[]"),
         routeNumberPlacement: parts[10] === "BeforeBaseName" ? "BeforeBaseName" : "AfterBaseName",
+        routeShieldStyle: parseShieldSelection(parts[19] ?? "None"),
         undergroundMode: parts[11] === "1",
         selectedSavedRouteId: toNumber(parts[12] ?? "0"),
         savedRoutesViewActive: parts[13] === "1",
@@ -101,6 +141,8 @@ export function parsePanelState(raw: string): PanelState {
         savedRouteReviewRouteId: toNumber(parts[15] ?? "0"),
         showAdvancedRouteDetails: parts[16] === "1",
         applyCooldownActive: parts[17] === "1",
+        routeStatisticsEnabled: parts[18] !== "0",
+        savedRenameRoutesEnabled: parts[20] !== "0",
     };
 }
 

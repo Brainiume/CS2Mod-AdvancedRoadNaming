@@ -1,0 +1,363 @@
+ADVANCED ROAD NAMING - CUSTOM ROUTE SHIELDS
+===========================================
+
+Status: Work in progress
+Schema version: 1
+
+This guide explains how to import an SVG route shield and control the text
+drawn over it.
+
+
+FOLDER
+------
+
+Place custom shield files in:
+
+  AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\AdvancedRoadNaming\RouteShields
+
+Nested folders are supported. The mod currently loads up to 128 custom SVG
+files. Each SVG must be 2 MB or smaller, and each JSON file must be 256 KB or
+smaller.
+
+
+QUICK START
+-----------
+
+1. Copy an SVG into the RouteShields folder.
+2. In the game, open Advanced Road Naming settings and select
+   Refresh Route Shields.
+3. The mod creates a same-name JSON file beside the SVG if one is missing.
+4. Open RouteShieldDesigner.html in a normal web browser.
+5. Use Load existing JSON and select the generated JSON file.
+6. Optionally use Load SVG preview and select the matching SVG.
+7. Adjust the shield and text settings.
+8. Download the JSON. Keep its filename the same as the SVG filename.
+9. Replace the JSON beside the SVG, then select Refresh Route Shields again.
+10. Open Browse shields in the route editor and use the Custom filter.
+
+Example file pair:
+
+  MyShield.svg
+  MyShield.json
+
+
+IMPORTANT RULES
+---------------
+
+- The SVG and JSON must be in the same folder and have the same base filename.
+- Do not change the generated id. It connects saved routes to the imported
+  shield.
+- Renaming or moving an imported SVG changes its generated id. Saved routes
+  using the old id may no longer find that shield.
+- The svg field must contain only the matching SVG filename, not a path.
+- Keep system set to Custom if you want the shield under the Custom filter.
+- JSON property names and text source names are case-sensitive.
+- Text colors must use #RRGGBB. Alpha/transparency is not supported in schema 1.
+- The game controls world placement, zoom scaling, spacing, motion fading, and
+  occlusion. These are not configured per shield.
+- The game UI font, centered alignment, bold weight, and centered transform
+  origin are fixed.
+- The Australian alphanumeric rectangle uses its own dynamic layout and is not
+  controlled by a JSON definition.
+
+
+COMPLETE EXAMPLE
+----------------
+
+This example displays the complete route code, such as A12 or NH-7:
+
+{
+  "schemaVersion": 1,
+  "id": "user-0123456789abcdef0123",
+  "name": "My Custom Shield",
+  "region": "Custom",
+  "system": "Custom",
+  "svg": "MyShield.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    {
+      "id": "route-code",
+      "source": "routeCode",
+      "text": "",
+      "color": "#FFFFFF",
+      "fontSizeRem": 21,
+      "offsetXRem": 0,
+      "offsetYRem": 0,
+      "scalePercent": 100,
+      "rotationDegrees": 0
+    }
+  ]
+}
+
+The id above is an example only. Always retain the id generated for your file.
+
+
+TOP-LEVEL FIELDS
+----------------
+
+schemaVersion
+  Required. Must be 1.
+
+id
+  Required. A stable id generated from the SVG's path. Do not edit it.
+
+name
+  Required. The name used by the shield tooltip. Maximum 100 characters.
+
+region
+  Required. The country or region chip in the shield browser. Maximum 60
+  characters. Use Custom for the default imported-shield category.
+
+system
+  Required. Must be exactly one of:
+
+    National
+    Motorway
+    State
+    Custom
+
+  Use Custom for ordinary imported shields.
+
+svg
+  Required. The matching sibling SVG filename, including .svg. It cannot point
+  outside the shield's folder.
+
+widthRem and heightRem
+  Required. The route shield canvas dimensions. Both values must be from 8 to
+  256. These values control the SVG's displayed aspect and the coordinate space
+  used by text.
+
+textLayers
+  Required. An ordered list containing 1 to 8 text layers. The first layer is
+  drawn first. Later layers appear above earlier layers.
+
+
+TEXT LAYER FIELDS
+-----------------
+
+id
+  Required. A unique name for this layer. Maximum 60 characters. Examples:
+  route-number, prefix, header.
+
+source
+  Required. Chooses what the layer displays:
+
+    routeCode  Complete code, such as A12 or NH-7.
+    prefix     Leading letters and optional hyphen, such as A or NH-.
+    number     Remaining part, such as 12 or 7.
+    literal    Fixed text from the layer's text property.
+
+text
+  Used only when source is literal. Maximum 64 characters. Keep it as an empty
+  string for routeCode, prefix, and number layers.
+
+color
+  Required. Text color in #RRGGBB form. Examples:
+
+    #FFFFFF  white
+    #000000  black
+    #FFAA00  amber
+    #17365D  dark blue
+
+fontSizeRem
+  Required. Base text size from 1 to 128. Text is shrink-to-fit, so a long route
+  code may render smaller to stay inside the shield canvas.
+
+offsetXRem
+  Required. Horizontal movement from -256 to 256. Positive values move text to
+  the right; negative values move it to the left.
+
+offsetYRem
+  Required. Vertical movement from -256 to 256. Positive values move text down;
+  negative values move it up.
+
+scalePercent
+  Required. Uniform text scaling from 10 to 400. 100 is the normal size. The
+  transform is applied around the center of the shield.
+
+rotationDegrees
+  Required. Rotation from -360 to 360 degrees. Positive values rotate clockwise.
+
+
+HOW ROUTE CODES ARE SPLIT
+-------------------------
+
+Route codes are converted to uppercase and spaces are removed before display.
+
+Input       prefix source    number source    routeCode source
+-----       -------------    -------------    ----------------
+A12         A                12               A12
+M1          M                1                M1
+NH-7        NH-              7                NH-7
+US20        US               20               US20
+52          (empty)          52               52
+
+If a number layer cannot find a separate number part, it uses the complete code.
+An empty route code uses 1 in previews.
+
+
+EXAMPLE: NUMBER ONLY
+--------------------
+
+Use this when the SVG already communicates the road system:
+
+"textLayers": [
+  {
+    "id": "route-number",
+    "source": "number",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 24,
+    "offsetXRem": 0,
+    "offsetYRem": 1,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]
+
+
+EXAMPLE: LETTERS AND NUMBER TOGETHER
+------------------------------------
+
+Use routeCode to display A12, M4, NH-7, or another full designation:
+
+"textLayers": [
+  {
+    "id": "route-code",
+    "source": "routeCode",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 20,
+    "offsetXRem": 0,
+    "offsetYRem": 0,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]
+
+
+EXAMPLE: PREFIX AND NUMBER IN DIFFERENT POSITIONS
+-------------------------------------------------
+
+This puts the letters above the number:
+
+"textLayers": [
+  {
+    "id": "prefix",
+    "source": "prefix",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 9,
+    "offsetXRem": 0,
+    "offsetYRem": -8,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  },
+  {
+    "id": "route-number",
+    "source": "number",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 22,
+    "offsetXRem": 0,
+    "offsetYRem": 4,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]
+
+
+EXAMPLE: FIXED HEADER AND ROUTE NUMBER
+--------------------------------------
+
+This creates a NATIONAL header above a number:
+
+"textLayers": [
+  {
+    "id": "header",
+    "source": "literal",
+    "text": "NATIONAL",
+    "color": "#FFFFFF",
+    "fontSizeRem": 7,
+    "offsetXRem": 0,
+    "offsetYRem": -10,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  },
+  {
+    "id": "route-number",
+    "source": "number",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 23,
+    "offsetXRem": 0,
+    "offsetYRem": 4,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]
+
+
+EXAMPLE: BLACK TEXT
+-------------------
+
+For a light-colored SVG, use:
+
+  "color": "#000000"
+
+
+TUNING TIPS
+-----------
+
+- Start with the automatically generated widthRem and heightRem.
+- Adjust fontSizeRem first.
+- Use offsetXRem and offsetYRem to place the text in the SVG's empty area.
+- Use scalePercent for small proportional adjustments after choosing a font
+  size.
+- Use separate prefix and number layers when the artwork has distinct spaces.
+- Use routeCode when letters and numbers should remain together.
+- Test one-digit, three-digit, and long custom route codes.
+- The HTML preview is a close browser approximation. Confirm final alignment in
+  the game because the game uses its own UI font renderer.
+
+
+REFRESHING AND ERRORS
+---------------------
+
+After changing an SVG or JSON file, select Refresh Route Shields in Advanced
+Road Naming settings.
+
+The settings status reports:
+
+- Number of loaded built-in shields
+- Number of loaded custom shields
+- Number of errors
+- Latest validation error
+
+Full paths and validation details are written to Player.log.
+
+If a custom JSON file becomes invalid:
+
+- The last valid in-memory version remains active when available.
+- If no valid version has been loaded, the mod attempts to generate defaults.
+- A missing custom JSON file is generated automatically.
+
+
+OLDER JSON FILES
+----------------
+
+Older files using showPrefix and textColor are upgraded automatically:
+
+- showPrefix true becomes a routeCode text layer.
+- showPrefix false becomes a number text layer.
+- White and black color names become #FFFFFF and #000000.
+
+
+BUILT-IN SHIELDS
+----------------
+
+Built-in shield JSON definitions are stored with the installed mod assets.
+They use the same schema, but mod updates may overwrite direct edits. The
+ModsData folder is intended for user-created custom shields.
+

@@ -4,12 +4,13 @@ import { panelActions } from "bindings";
 import { DelayedTooltip } from "components/DelayedTooltip";
 import { RouteSettingsControls } from "components/selectedInfo/RouteSettingsControls";
 import { useAdvancedRoadNamingLocalization } from "localization";
-import { RouteNumberPlacement } from "types";
+import { RouteNumberPlacement, RouteShieldSelection } from "types";
 import styles from "./advancedRoadRoutesContent.module.scss";
 
 interface AdvancedRoadRoutesContentProps {
     input: string;
     routeNumberPlacement: RouteNumberPlacement;
+    routeShieldStyle: RouteShieldSelection;
     savedRouteInputs: string[];
     canUndo: boolean;
     canClear: boolean;
@@ -25,10 +26,13 @@ export function AdvancedRoadRoutesContent(props: AdvancedRoadRoutesContentProps)
             <RouteSettingsControls
                 input={props.input}
                 routeNumberPlacement={props.routeNumberPlacement}
+                routeShieldStyle={props.routeShieldStyle}
                 savedRouteInputs={props.savedRouteInputs}
                 initialExpanded={true}
+                autoShieldDefault={true}
                 onInputChange={panelActions.setInput}
                 onRouteNumberPlacementChange={panelActions.setRouteNumberPlacement}
+                onRouteShieldStyleChange={panelActions.setRouteShieldStyle}
             />
 
             <div className={styles.divider} />

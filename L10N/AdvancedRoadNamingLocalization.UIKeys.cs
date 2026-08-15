@@ -23,6 +23,30 @@ namespace AdvancedRoadNaming.L10N
             public const string CustomRoutePrefixAria = "AdvancedRoadNaming.UI[CustomRoutePrefixAria]";
             public const string AutoRouteNumberTooltip = "AdvancedRoadNaming.UI[AutoRouteNumberTooltip]";
             public const string CustomRouteNumberAria = "AdvancedRoadNaming.UI[CustomRouteNumberAria]";
+            public const string RouteShieldTooltip = "AdvancedRoadNaming.UI[RouteShieldTooltip]";
+            public const string RouteStatistics = "AdvancedRoadNaming.UI[RouteStatistics]";
+            public const string RouteStatisticsTrafficFlow = "AdvancedRoadNaming.UI[RouteStatisticsTrafficFlow]";
+            public const string RouteStatisticsTrafficVolume = "AdvancedRoadNaming.UI[RouteStatisticsTrafficVolume]";
+            public const string RouteStatisticsLoading = "AdvancedRoadNaming.UI[RouteStatisticsLoading]";
+            public const string RouteStatisticsNoValidRoads = "AdvancedRoadNaming.UI[RouteStatisticsNoValidRoads]";
+            public const string RouteStatisticsExcludedRoads = "AdvancedRoadNaming.UI[RouteStatisticsExcludedRoads]";
+            public const string RouteStatisticsUnavailable = "AdvancedRoadNaming.UI[RouteStatisticsUnavailable]";
+            public const string RouteStatisticsConfigured = "AdvancedRoadNaming.UI[RouteStatisticsConfigured]";
+            public const string RouteStatisticsBusyVolumePercentile = "AdvancedRoadNaming.UI[RouteStatisticsBusyVolumePercentile]";
+            public const string RouteStatisticsBusiestShareAverage = "AdvancedRoadNaming.UI[RouteStatisticsBusiestShareAverage]";
+            public const string RouteStatisticsAllSegmentAverage = "AdvancedRoadNaming.UI[RouteStatisticsAllSegmentAverage]";
+            public const string RouteStatisticsBusyVolume = "AdvancedRoadNaming.UI[RouteStatisticsBusyVolume]";
+            public const string RouteStatisticsCorridorLoad = "AdvancedRoadNaming.UI[RouteStatisticsCorridorLoad]";
+            public const string RouteStatisticsVolumeWeightedFlow = "AdvancedRoadNaming.UI[RouteStatisticsVolumeWeightedFlow]";
+            public const string RouteStatisticsBottleneckFlow = "AdvancedRoadNaming.UI[RouteStatisticsBottleneckFlow]";
+            public const string RouteStatisticsCongestedDistance = "AdvancedRoadNaming.UI[RouteStatisticsCongestedDistance]";
+            public const string RouteStatisticsConfiguredFlowTooltip = "AdvancedRoadNaming.UI[RouteStatisticsConfiguredFlowTooltip]";
+            public const string RouteStatisticsConfiguredVolumeTooltip = "AdvancedRoadNaming.UI[RouteStatisticsConfiguredVolumeTooltip]";
+            public const string RouteStatisticsBusyVolumeTooltip = "AdvancedRoadNaming.UI[RouteStatisticsBusyVolumeTooltip]";
+            public const string RouteStatisticsCorridorLoadTooltip = "AdvancedRoadNaming.UI[RouteStatisticsCorridorLoadTooltip]";
+            public const string RouteStatisticsVolumeWeightedFlowTooltip = "AdvancedRoadNaming.UI[RouteStatisticsVolumeWeightedFlowTooltip]";
+            public const string RouteStatisticsBottleneckFlowTooltip = "AdvancedRoadNaming.UI[RouteStatisticsBottleneckFlowTooltip]";
+            public const string RouteStatisticsCongestedDistanceTooltip = "AdvancedRoadNaming.UI[RouteStatisticsCongestedDistanceTooltip]";
         }
     }
 }

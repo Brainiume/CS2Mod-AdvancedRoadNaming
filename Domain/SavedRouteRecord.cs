@@ -14,6 +14,8 @@ namespace AdvancedRoadNaming.Domain
         public string RouteCode { get; set; }
         public string RoutePrefixType { get; set; }
         public RouteNumberPlacement RouteNumberPlacement { get; set; } = RouteNumberPlacement.AfterBaseName;
+        public RouteShieldStyle RouteShieldStyle { get; set; } = RouteShieldStyle.None;
+        public string RouteShieldImportId { get; set; }
         public long CreatedAtUtcTicks { get; set; }
         public long UpdatedAtUtcTicks { get; set; }
         public long LastAppliedUtcTicks { get; set; }
@@ -87,6 +89,10 @@ namespace AdvancedRoadNaming.Domain
             writer.Write(RoutePrefixType);
             writer.PropertyName(nameof(RouteNumberPlacement));
             writer.Write(Enum.GetName(typeof(RouteNumberPlacement), RouteNumberPlacement));
+            writer.PropertyName(nameof(RouteShieldStyle));
+            writer.Write(Enum.GetName(typeof(RouteShieldStyle), RouteShieldStyle));
+            writer.PropertyName(nameof(RouteShieldImportId));
+            writer.Write(RouteShieldImportId);
             writer.PropertyName(nameof(CreatedAtUtcTicks));
             writer.Write(CreatedAtUtcTicks);
             writer.PropertyName(nameof(UpdatedAtUtcTicks));

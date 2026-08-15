@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "MalaysiaExpressway",
+  "name": "Malaysia Expressway",
+  "region": "Malaysia",
+  "system": "Motorway",
+  "svg": "Blank_Malaysian_expressway_shield.svg",
+  "widthRem": 46,
+  "heightRem": 28,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 22, "offsetXRem": 0, "offsetYRem": 0, "scalePercent": 58, "rotationDegrees": 0 }
+  ]
+}

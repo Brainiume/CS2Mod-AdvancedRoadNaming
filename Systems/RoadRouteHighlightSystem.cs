@@ -1,7 +1,11 @@
 using Colossal.Mathematics;
 using Game;
 using Game.Rendering;
+using AdvancedRoadNaming.Domain;
+using Unity.Burst;
+using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -21,6 +25,8 @@ namespace AdvancedRoadNaming.Systems
         private const float SavedWaypointRadius = 7.8f;
         private const float WaypointHaloRadius = 13.8f;
         private const float SavedWaypointHaloRadius = 12.4f;
+        private const float SnappedWaypointRadius = 11.2f;
+        private const float SnappedWaypointHaloRadius = 18.6f;
 
         private static readonly Color RouteColor = new Color(0.22f, 0.86f, 0.12f, 0.78f);
         private static readonly Color SavedRouteColor = new Color(0.22f, 0.86f, 0.12f, 0.64f);
@@ -40,10 +46,26 @@ namespace AdvancedRoadNaming.Systems
         private static readonly Color SelectedManagedWaypointHaloColor = new Color(0.92f, 1f, 0.9f, 0.24f);
         private static readonly Color ActiveWaypointHaloColor = new Color(0.55f, 0.8f, 1f, 0.38f);
         private static readonly Color RemoveWaypointHaloColor = new Color(1f, 0.65f, 0.6f, 0.4f);
+        private static readonly Color RenameRouteColor = new Color(0.66f, 0.33f, 0.97f, 0.78f);
+        private static readonly Color RenameSavedRouteColor = new Color(0.66f, 0.33f, 0.97f, 0.64f);
+        private static readonly Color RenameManagedRouteColor = new Color(0.66f, 0.33f, 0.97f, 0.26f);
+        private static readonly Color RenameSelectedManagedRouteColor = new Color(0.66f, 0.33f, 0.97f, 0.82f);
+        private static readonly Color RenamePreviewColor = new Color(0.74f, 0.48f, 0.98f, 0.46f);
+        private static readonly Color RenameHoverColor = new Color(0.78f, 0.58f, 0.99f, 0.28f);
+        private static readonly Color RenameWaypointColor = new Color(0.66f, 0.33f, 0.97f, 0.9f);
+        private static readonly Color RenameSavedWaypointColor = new Color(0.66f, 0.33f, 0.97f, 0.74f);
+        private static readonly Color RenameManagedWaypointColor = new Color(0.66f, 0.33f, 0.97f, 0.34f);
+        private static readonly Color RenameSelectedManagedWaypointColor = new Color(0.66f, 0.33f, 0.97f, 0.94f);
+        private static readonly Color RenameWaypointHaloColor = new Color(0.88f, 0.77f, 1f, 0.24f);
+        private static readonly Color RenameSavedWaypointHaloColor = new Color(0.88f, 0.77f, 1f, 0.16f);
+        private static readonly Color RenameManagedWaypointHaloColor = new Color(0.88f, 0.77f, 1f, 0.08f);
+        private static readonly Color RenameSelectedManagedWaypointHaloColor = new Color(0.88f, 0.77f, 1f, 0.24f);
 
         private RoadRouteToolSystem _toolSystem;
         private RoadRouteOverlayGeometrySystem _geometrySystem;
         private OverlayRenderSystem _overlayRenderSystem;
+        private NativeList<CurveDrawCommand> _curveCommands;
+        private NativeList<CircleDrawCommand> _circleCommands;
 
         protected override void OnCreate()
         {
@@ -51,6 +73,18 @@ namespace AdvancedRoadNaming.Systems
             _toolSystem = World.GetOrCreateSystemManaged<RoadRouteToolSystem>();
             _geometrySystem = World.GetOrCreateSystemManaged<RoadRouteOverlayGeometrySystem>();
             _overlayRenderSystem = World.GetOrCreateSystemManaged<OverlayRenderSystem>();
+            _curveCommands = new NativeList<CurveDrawCommand>(128, Allocator.Persistent);
+            _circleCommands = new NativeList<CircleDrawCommand>(64, Allocator.Persistent);
+        }
+
+        protected override void OnDestroy()
+        {
+            CompleteDependency();
+            if (_curveCommands.IsCreated)
+                _curveCommands.Dispose();
+            if (_circleCommands.IsCreated)
+                _circleCommands.Dispose();
+            base.OnDestroy();
         }
 
         protected override void OnUpdate()
@@ -58,46 +92,63 @@ namespace AdvancedRoadNaming.Systems
             if (_toolSystem == null || !_toolSystem.IsRunning || _overlayRenderSystem == null || _geometrySystem == null)
                 return;
 
-            var buffer = _overlayRenderSystem.GetBuffer(out var renderBufferJobHandle);
-            renderBufferJobHandle.Complete();
+            _curveCommands.Clear();
+            _circleCommands.Clear();
 
-            DrawManagedRoutes(buffer);
-            DrawGeometry(buffer, _geometrySystem.SavedRouteCurves, SavedRouteColor, SavedRouteWidth);
-            DrawNodes(buffer, _geometrySystem.SavedRouteNodes, SavedWaypointHaloColor, SavedWaypointHaloRadius);
-            DrawNodes(buffer, _geometrySystem.SavedRouteNodes, SavedWaypointColor, SavedWaypointRadius);
-            DrawGeometry(buffer, _geometrySystem.ActiveCurves, RouteColor, RouteWidth);
-            DrawNodes(buffer, _geometrySystem.ActiveNodes, WaypointHaloColor, WaypointHaloRadius);
-            DrawNodes(buffer, _geometrySystem.ActiveNodes, WaypointColor, WaypointRadius);
-            DrawGeometry(buffer, _geometrySystem.PreviewCurves, PreviewColor, PreviewWidth);
-            DrawNodes(buffer, _geometrySystem.PreviewNodes, WaypointHaloColor, WaypointHaloRadius);
-            DrawNodes(buffer, _geometrySystem.PreviewNodes, WaypointColor, WaypointRadius);
-            DrawGeometry(buffer, _geometrySystem.HoverCurves, HoverColor, HoverWidth);
-            DrawWaypointInteractionState(buffer);
+            var renameMode = _toolSystem.Mode == RoadRouteToolMode.RenameSelectedSegments;
+
+            DrawManagedRoutes();
+            DrawGeometry(_geometrySystem.SavedRouteCurves, renameMode ? RenameSavedRouteColor : SavedRouteColor, SavedRouteWidth);
+            DrawNodes(_geometrySystem.SavedRouteNodes, renameMode ? RenameSavedWaypointHaloColor : SavedWaypointHaloColor, SavedWaypointHaloRadius);
+            DrawNodes(_geometrySystem.SavedRouteNodes, renameMode ? RenameSavedWaypointColor : SavedWaypointColor, SavedWaypointRadius);
+            DrawGeometry(_geometrySystem.ActiveCurves, renameMode ? RenameRouteColor : RouteColor, RouteWidth);
+            DrawNodes(_geometrySystem.ActiveNodes, renameMode ? RenameWaypointHaloColor : WaypointHaloColor, WaypointHaloRadius);
+            DrawNodes(_geometrySystem.ActiveNodes, renameMode ? RenameWaypointColor : WaypointColor, WaypointRadius);
+            DrawGeometry(_geometrySystem.PreviewCurves, renameMode ? RenamePreviewColor : PreviewColor, PreviewWidth);
+            DrawNodes(_geometrySystem.PreviewNodes, renameMode ? RenameWaypointHaloColor : WaypointHaloColor, WaypointHaloRadius);
+            DrawNodes(_geometrySystem.PreviewNodes, renameMode ? RenameWaypointColor : WaypointColor, WaypointRadius);
+            DrawGeometry(_geometrySystem.HoverCurves, renameMode ? RenameHoverColor : HoverColor, HoverWidth);
+            DrawWaypointInteractionState();
+
+            if (_curveCommands.Length == 0 && _circleCommands.Length == 0)
+                return;
+
+            var curveCommands = _curveCommands.ToArray(Allocator.TempJob);
+            var circleCommands = _circleCommands.ToArray(Allocator.TempJob);
+            var buffer = _overlayRenderSystem.GetBuffer(out var bufferDependency);
+            var drawHandle = new FlushOverlayCommandsJob
+            {
+                Buffer = buffer,
+                CurveCommands = curveCommands,
+                CircleCommands = circleCommands
+            }.Schedule(JobHandle.CombineDependencies(Dependency, bufferDependency));
+
+            _overlayRenderSystem.AddBufferWriter(drawHandle);
+            var disposeCurvesHandle = curveCommands.Dispose(drawHandle);
+            var disposeCirclesHandle = circleCommands.Dispose(drawHandle);
+            Dependency = JobHandle.CombineDependencies(disposeCurvesHandle, disposeCirclesHandle);
         }
 
-        private void DrawWaypointInteractionState(OverlayRenderSystem.Buffer buffer)
+        private void DrawWaypointInteractionState()
         {
             var waypoints = _toolSystem.Waypoints;
             var hoveredIndex = _toolSystem.HoveredWaypointIndex;
             if (hoveredIndex >= 0 && waypoints != null && hoveredIndex < waypoints.Count)
             {
                 var hoveredPosition = waypoints[hoveredIndex].Position;
-                buffer.DrawCircle(ActiveWaypointHaloColor, hoveredPosition, WaypointHaloRadius);
-                buffer.DrawCircle(ActiveWaypointColor, hoveredPosition, WaypointRadius);
+                AddCircle(ActiveWaypointHaloColor, hoveredPosition, SnappedWaypointHaloRadius);
+                AddCircle(ActiveWaypointColor, hoveredPosition, SnappedWaypointRadius);
             }
 
             var activeEditIndex = _toolSystem.ActiveEditIndex;
-            if (_toolSystem.HasActiveMoveEdit && activeEditIndex >= 0)
+            if (_toolSystem.HasActiveWaypointEdit && activeEditIndex >= 0)
             {
                 var activeWaypoints = _toolSystem.PreviewWaypoints;
-                if (activeWaypoints == null || activeEditIndex >= activeWaypoints.Count)
-                    activeWaypoints = _toolSystem.Waypoints;
-
                 if (activeWaypoints != null && activeEditIndex < activeWaypoints.Count)
                 {
                     var position = activeWaypoints[activeEditIndex].Position;
-                    buffer.DrawCircle(ActiveWaypointHaloColor, position, WaypointHaloRadius);
-                    buffer.DrawCircle(ActiveWaypointColor, position, WaypointRadius);
+                    AddCircle(ActiveWaypointHaloColor, position, SnappedWaypointHaloRadius);
+                    AddCircle(ActiveWaypointColor, position, SnappedWaypointRadius);
                 }
             }
 
@@ -106,11 +157,11 @@ namespace AdvancedRoadNaming.Systems
                 return;
 
             var removalPosition = waypoints[removalIndex].Position;
-            buffer.DrawCircle(RemoveWaypointHaloColor, removalPosition, WaypointHaloRadius);
-            buffer.DrawCircle(RemoveWaypointColor, removalPosition, WaypointRadius);
+            AddCircle(RemoveWaypointHaloColor, removalPosition, SnappedWaypointHaloRadius);
+            AddCircle(RemoveWaypointColor, removalPosition, SnappedWaypointRadius);
         }
 
-        private void DrawManagedRoutes(OverlayRenderSystem.Buffer buffer)
+        private void DrawManagedRoutes()
         {
             var groups = _geometrySystem.ManagedRouteGroups;
             if (groups == null || groups.Count == 0)
@@ -125,29 +176,99 @@ namespace AdvancedRoadNaming.Systems
                     if (group == null || group.Selected != drawSelected)
                         continue;
 
-                    DrawGeometry(buffer, group.Curves, drawSelected ? SelectedManagedRouteColor : ManagedRouteColor, drawSelected ? SelectedManagedRouteWidth : ManagedRouteWidth);
-                    DrawNodes(buffer, group.Nodes, drawSelected ? SelectedManagedWaypointHaloColor : ManagedWaypointHaloColor, drawSelected ? WaypointHaloRadius : SavedWaypointHaloRadius);
-                    DrawNodes(buffer, group.Nodes, drawSelected ? SelectedManagedWaypointColor : ManagedWaypointColor, drawSelected ? WaypointRadius : SavedWaypointRadius);
+                    var renameMode = group.Mode == RoadRouteToolMode.RenameSelectedSegments;
+                    var routeColor = renameMode
+                        ? drawSelected ? RenameSelectedManagedRouteColor : RenameManagedRouteColor
+                        : drawSelected ? SelectedManagedRouteColor : ManagedRouteColor;
+                    var haloColor = renameMode
+                        ? drawSelected ? RenameSelectedManagedWaypointHaloColor : RenameManagedWaypointHaloColor
+                        : drawSelected ? SelectedManagedWaypointHaloColor : ManagedWaypointHaloColor;
+                    var waypointColor = renameMode
+                        ? drawSelected ? RenameSelectedManagedWaypointColor : RenameManagedWaypointColor
+                        : drawSelected ? SelectedManagedWaypointColor : ManagedWaypointColor;
+                    DrawGeometry(group.Curves, routeColor, drawSelected ? SelectedManagedRouteWidth : ManagedRouteWidth);
+                    DrawNodes(group.Nodes, haloColor, drawSelected ? WaypointHaloRadius : SavedWaypointHaloRadius);
+                    DrawNodes(group.Nodes, waypointColor, drawSelected ? WaypointRadius : SavedWaypointRadius);
                 }
             }
         }
 
-        private static void DrawGeometry(OverlayRenderSystem.Buffer buffer, System.Collections.Generic.IReadOnlyList<Bezier4x3> curves, Color lineColor, float lineWidth)
+        private void DrawGeometry(System.Collections.Generic.IReadOnlyList<Bezier4x3> curves, Color lineColor, float lineWidth)
         {
             if (curves == null)
                 return;
 
             for (var i = 0; i < curves.Count; i++)
-                buffer.DrawCurve(lineColor, curves[i], lineWidth, RoundedLine);
+            {
+                _curveCommands.Add(new CurveDrawCommand
+                {
+                    Curve = curves[i],
+                    Color = lineColor,
+                    Width = lineWidth,
+                    Roundness = RoundedLine
+                });
+            }
         }
 
-        private static void DrawNodes(OverlayRenderSystem.Buffer buffer, System.Collections.Generic.IReadOnlyList<float3> nodes, Color color, float radius)
+        private void DrawNodes(System.Collections.Generic.IReadOnlyList<float3> nodes, Color color, float radius)
         {
             if (nodes == null)
                 return;
 
             for (var i = 0; i < nodes.Count; i++)
-                buffer.DrawCircle(color, nodes[i], radius);
+                AddCircle(color, nodes[i], radius);
+        }
+
+        private void AddCircle(Color color, float3 position, float diameter)
+        {
+            _circleCommands.Add(new CircleDrawCommand
+            {
+                Position = position,
+                Color = color,
+                Diameter = diameter
+            });
+        }
+
+        private struct CurveDrawCommand
+        {
+            public Bezier4x3 Curve;
+            public Color Color;
+            public float Width;
+            public float2 Roundness;
+        }
+
+        private struct CircleDrawCommand
+        {
+            public float3 Position;
+            public Color Color;
+            public float Diameter;
+        }
+
+        [BurstCompile]
+        private struct FlushOverlayCommandsJob : IJob
+        {
+            public OverlayRenderSystem.Buffer Buffer;
+
+            [ReadOnly]
+            public NativeArray<CurveDrawCommand> CurveCommands;
+
+            [ReadOnly]
+            public NativeArray<CircleDrawCommand> CircleCommands;
+
+            public void Execute()
+            {
+                for (var i = 0; i < CurveCommands.Length; i++)
+                {
+                    var command = CurveCommands[i];
+                    Buffer.DrawCurve(command.Color, command.Curve, command.Width, command.Roundness);
+                }
+
+                for (var i = 0; i < CircleCommands.Length; i++)
+                {
+                    var command = CircleCommands[i];
+                    Buffer.DrawCircle(command.Color, command.Position, command.Diameter);
+                }
+            }
         }
     }
 }

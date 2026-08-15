@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "BlueHighwayShield",
+  "name": "Australian State Route",
+  "region": "Australia / New Zealand",
+  "system": "State",
+  "svg": "australian-blue-highway.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 20, "offsetXRem": 0, "offsetYRem": -1, "scalePercent": 78, "rotationDegrees": 0 }
+  ]
+}

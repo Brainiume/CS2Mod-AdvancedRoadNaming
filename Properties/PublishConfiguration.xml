@@ -48,28 +48,35 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.1.9" />
+	<ModVersion Value="0.2.3" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
-	<Dependency Id="" />
+	<!-- No mod dependencies. -->
 	<!--Required DLC, can be set multiple times. Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture"-->
-	<RequiredDLC Value="" />
+	<!-- No required DLC. -->
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-		Road Routes
-		
-		- Improved waypoint manipulation
-		- Right clicking a waypoint now removes that waypoint instead of the last placed one
-		- Added “Reapply All Saved Routes” button.
-		- Improved route-list sizing and scrolling.
-		- Added configurable shortcuts:
-		 - R : Rename mode
-		 - T : Routes menu
+Saved Rename Routes
+- Renamed roads can now be saved as reapplicable routes.
+- Added menus to create, manage, rebuild, delete, and reapply saved renames.
+- Added a setting to disable Saved Rename Routes and use the original renaming workflow.
+- Improved support for CJK and Bopomofo text input.
 
-		Known Issues
-		
-		- Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
+Road Name Reliability
+- Improved protection against renamed roads unexpectedly merging back into ordinary roads.
+- Renamed roads should better retain their names after zoning changes, road upgrades, road movement, splitting and replacement.
+- Improved recovery when saved routes contain roads that were changed or removed.
+
+Route Shields
+- All Route shield designs are now controlled through JSON files.
+- Shield text size, position, colour, rotation, and displayed parts can be customised.
+- Fixed shield previews becoming too small.
+- Shields should no longer drastically change size when the camera angle changes.
+- A custom shield designer html form is bundled in the ModsData folder which allows the interactive configuration of route shields without messing around with JSON
+
+Known Issues
+- Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
 	" />
 	<!--<ChangeLog>
 	</ChangeLog>-->

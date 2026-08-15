@@ -1,13 +1,12 @@
-import { ChangeEvent } from "react";
 import { FocusDisabled } from "cs2/input";
 import { Button, Icon, Tooltip } from "cs2/ui";
 import { panelActions } from "bindings";
 import { DelayedTooltip } from "components/DelayedTooltip";
 import { useAdvancedRoadNamingLocalization } from "localization";
+import { RoadNameTextInput } from "components/selectedInfo/RoadNameTextInput";
 import styles from "./advancedRoadNamingContent.module.scss";
 
 const undergroundIcon = "Media/Tools/Net Tool/Underground.svg";
-
 interface AdvancedRoadNamingContentProps {
     input: string;
     undergroundMode: boolean;
@@ -18,22 +17,16 @@ interface AdvancedRoadNamingContentProps {
 
 export function AdvancedRoadNamingContent(props: AdvancedRoadNamingContentProps) {
     const { t } = useAdvancedRoadNamingLocalization();
-
-    const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-        // Accept all characters - validation happens in C#
-        panelActions.setInput(event.currentTarget.value);
-    };
-
     return (
         <div className={styles.content}>
             <label className={styles.field}>
                 <span className={styles.fieldLabel}>Road Name</span>
                 <div className={styles.inputLine}>
-                    <input
+                    <RoadNameTextInput
                         className={styles.textInput}
-                        type="text"
+                        debugName="AdvancedRoadNamingRoadName"
                         value={props.input}
-                        onChange={onInputChange}
+                        onChange={panelActions.setInput}
                     />
                     <FocusDisabled>
                         <Tooltip tooltip="Underground mode">

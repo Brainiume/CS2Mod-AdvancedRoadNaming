@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "IndiaNational",
+  "name": "India National Highway",
+  "region": "India",
+  "system": "National",
+  "svg": "Road_marker_IN_NH.svg",
+  "widthRem": 27,
+  "heightRem": 39,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 5, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

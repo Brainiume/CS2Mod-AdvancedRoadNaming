@@ -17,6 +17,7 @@ namespace AdvancedRoadNaming.Systems
         public const string ToolIdentifier = "AdvancedRoadNaming.RouteBasedRoadNamingTool";
         private const int ApplyCooldownMilliseconds = 1000;
         private const float WaypointDragThreshold = 2f;
+        private const float ManipulationSnapRadius = 16f;
         private static readonly long ApplyCooldownTimestampTicks = System.Math.Max(1L, System.Diagnostics.Stopwatch.Frequency * ApplyCooldownMilliseconds / 1000L);
 
         private SegmentMetadataSystem _metadataSystem;
@@ -24,6 +25,8 @@ namespace AdvancedRoadNaming.Systems
         private RoadRouteToolMode _mode;
         private string _inputText;
         private RouteNumberPlacement _routeNumberPlacement;
+        private RouteShieldStyle _routeShieldStyle;
+        private string _routeShieldImportId;
         private string _statusMessage;
         private bool _isRunning;
         private bool _routeMenuActive;
@@ -37,11 +40,12 @@ namespace AdvancedRoadNaming.Systems
         private SavedRouteReviewSession _savedRouteReview;
         private long _applyCooldownUntilTimestamp;
         private bool _activeEditPointerDown;
-        private bool _activeEditStartedWithCurrentPress;
         private bool _activeEditPointerMoved;
         private float3 _activeEditPointerStartPosition;
         private int _armedWaypointRemovalIndex = -1;
         private bool _isWaypointRemovalArmed;
+        private bool _savedRenameRoutesStateInitialized;
+        private bool _observedSavedRenameRoutesEnabled;
         private readonly System.Collections.Generic.List<Entity> _savedRoutePreviewSegments = new System.Collections.Generic.List<Entity>();
         private readonly System.Collections.Generic.List<RoadRouteWaypoint> _savedRoutePreviewWaypoints = new System.Collections.Generic.List<RoadRouteWaypoint>();
 
@@ -54,6 +58,10 @@ namespace AdvancedRoadNaming.Systems
         public string InputText => _inputText ?? string.Empty;
 
         public RouteNumberPlacement RouteNumberPlacement => _routeNumberPlacement;
+
+        public RouteShieldStyle RouteShieldStyle => _routeShieldStyle;
+
+        public string RouteShieldImportId => _routeShieldImportId ?? string.Empty;
 
         public string StatusMessage => !string.IsNullOrWhiteSpace(_statusMessage) ? _statusMessage : _selectionController?.BuildRouteInstruction() ?? string.Empty;
 
@@ -77,7 +85,11 @@ namespace AdvancedRoadNaming.Systems
 
         public bool HasActiveMoveEdit => _selectionController?.HasActiveMoveEdit ?? false;
 
+        public bool HasActiveWaypointEdit => _selectionController?.HasActiveWaypointEdit ?? false;
+
         public bool HasHoveredRouteWaypoint => _selectionController?.HasHoveredRouteWaypoint ?? false;
+
+        public bool HasHoveredRouteInsertion => _selectionController?.HasHoveredRouteInsertion ?? false;
 
         public int ActiveEditIndex => _selectionController?.ActiveEditIndex ?? -1;
 
@@ -105,6 +117,8 @@ namespace AdvancedRoadNaming.Systems
 
         public bool ApplyCooldownActive => System.Diagnostics.Stopwatch.GetTimestamp() < _applyCooldownUntilTimestamp;
 
+        public bool SavedRenameRoutesEnabled => Mod.Settings?.EnableSavedRenameRoutes != false;
+
         public int ReviewSegmentCount => _savedRouteReview == null
             ? 0
             : _savedRouteReview.Mode == SavedRouteReviewMode.Modify
@@ -125,6 +139,8 @@ namespace AdvancedRoadNaming.Systems
             _mode = RoadRouteToolMode.AssignMajorRouteNumber;
             _inputText = string.Empty;
             _routeNumberPlacement = RouteNumberPlacement.AfterBaseName;
+            _routeShieldStyle = RouteShieldStyle.None;
+            _routeShieldImportId = string.Empty;
             _statusMessage = "Place first waypoint on a road.";
             requireNet = Game.Net.Layer.Road;
             Mod.log.Info("RoadRouteToolSystem created");
@@ -211,6 +227,20 @@ namespace AdvancedRoadNaming.Systems
 
         public void SetMode(RoadRouteToolMode mode)
         {
+            if (_mode != mode)
+            {
+                _savedRoutesViewActive = false;
+                _selectedSavedRouteId = 0;
+                _savedRouteReview = null;
+                _roadNameEditRouteId = 0;
+                _selectionController.Clear();
+                _selectionController.SetHovered(Entity.Null);
+                _savedRoutePreviewSegments.Clear();
+                _savedRoutePreviewWaypoints.Clear();
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
+
             _routeMenuActive = false;
             _mode = mode;
             _statusMessage = $"Mode: {mode}. {_selectionController.BuildRouteInstruction()}";
@@ -226,8 +256,17 @@ namespace AdvancedRoadNaming.Systems
             _routeNumberPlacement = placement;
         }
 
+        public void SetRouteShieldStyle(RouteShieldStyle shieldStyle, string shieldImportId = null)
+        {
+            _routeShieldStyle = shieldStyle;
+            _routeShieldImportId = shieldStyle == RouteShieldStyle.Imported ? shieldImportId ?? string.Empty : string.Empty;
+        }
+
         public void SetRouteMenuActive(bool active)
         {
+            if (active && !IsSavedRouteModeAvailable(_mode))
+                active = false;
+
             _routeMenuActive = active;
             if (!active)
                 return;
@@ -240,7 +279,9 @@ namespace AdvancedRoadNaming.Systems
             _selectionController.SetHovered(Entity.Null);
             _savedRoutePreviewSegments.Clear();
             _savedRoutePreviewWaypoints.Clear();
-            _statusMessage = "Advanced Road Routes menu active.";
+            _statusMessage = _mode == RoadRouteToolMode.RenameSelectedSegments
+                ? "Advanced Road Naming menu active."
+                : "Advanced Road Routes menu active.";
             MarkSavedRoutesJsonDirty();
             _manageOverlayVersion++;
             Mod.log.Info("Road Naming: Advanced Road Routes menu activated.");
@@ -248,6 +289,9 @@ namespace AdvancedRoadNaming.Systems
 
         public void SetSavedRoutesViewActive(bool active, bool resetSelection = true)
         {
+            if (active && !IsSavedRouteModeAvailable(_mode))
+                active = false;
+
             _routeMenuActive = false;
             _savedRoutesViewActive = active;
             if (resetSelection)
@@ -364,9 +408,21 @@ namespace AdvancedRoadNaming.Systems
             }
 
             _statusMessage = message;
-            if (result && _mode == RoadRouteToolMode.AssignMajorRouteNumber)
+            var shouldSave = result
+                && (_mode == RoadRouteToolMode.AssignMajorRouteNumber
+                    || (_mode == RoadRouteToolMode.RenameSelectedSegments && SavedRenameRoutesEnabled));
+            if (shouldSave)
             {
-                var savedRoute = _metadataSystem.SaveAppliedRoute(_selectionController.SelectedSegments, _selectionController.Waypoints, _mode, _inputText, _routeNumberPlacement);
+                var placement = _mode == RoadRouteToolMode.AssignMajorRouteNumber
+                    ? _routeNumberPlacement
+                    : RouteNumberPlacement.AfterBaseName;
+                var shieldStyle = _mode == RoadRouteToolMode.AssignMajorRouteNumber
+                    ? _routeShieldStyle
+                    : RouteShieldStyle.None;
+                var shieldImportId = _mode == RoadRouteToolMode.AssignMajorRouteNumber
+                    ? _routeShieldImportId
+                    : string.Empty;
+                var savedRoute = _metadataSystem.SaveAppliedRoute(_selectionController.SelectedSegments, _selectionController.Waypoints, _mode, _inputText, placement, shieldStyle, shieldImportId);
                 _selectedSavedRouteId = savedRoute.RouteId;
                 MarkSavedRoutesJsonDirty();
                 _manageOverlayVersion++;
@@ -386,7 +442,9 @@ namespace AdvancedRoadNaming.Systems
 
                 if (_savedRoutesJsonDirty)
                 {
-                    _savedRoutesJsonCache = _metadataSystem.BuildSavedRoutesJson() ?? "[]";
+                    _savedRoutesJsonCache = IsSavedRouteModeAvailable(_mode)
+                        ? _metadataSystem.BuildSavedRoutesJson(_mode) ?? "[]"
+                        : "[]";
                     _savedRoutesJsonDirty = false;
                 }
 
@@ -401,19 +459,24 @@ namespace AdvancedRoadNaming.Systems
 
         public bool SelectSavedRoute(long routeId)
         {
-            if (_savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify && _savedRouteReview.RouteId != routeId)
-                DiscardActiveSavedRouteEdit("Route selection changed; discarded unapplied manipulate edits.");
+            if (!TryGetSavedRouteForActiveMode(routeId, out var route))
+                return false;
+
+            if (_savedRouteReview != null && _savedRouteReview.RouteId != routeId)
+            {
+                if (_savedRouteReview.Mode == SavedRouteReviewMode.Modify)
+                {
+                    DiscardActiveSavedRouteEdit("Route selection changed; discarded unapplied manipulate edits.");
+                }
+                else
+                {
+                    _savedRouteReview = null;
+                    _statusMessage = "Route selection changed; discarded the unapplied rebuild preview.";
+                }
+            }
 
             _savedRoutePreviewSegments.Clear();
             _savedRoutePreviewWaypoints.Clear();
-            if (_metadataSystem == null || !_metadataSystem.RouteDatabase.TryGet(routeId, out var route))
-            {
-                _statusMessage = $"Saved route {routeId} was not found.";
-                if (_selectedSavedRouteId == routeId)
-                    _selectedSavedRouteId = 0;
-                _manageOverlayVersion++;
-                return false;
-            }
 
             for (var i = 0; i < route.OrderedSegmentIds.Count; i++)
             {
@@ -435,6 +498,9 @@ namespace AdvancedRoadNaming.Systems
 
         public bool BeginRebuildSavedRoute(long routeId)
         {
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
             if (!_metadataSystem.TryCreateRebuildReview(routeId, out var review, out var message))
             {
                 _statusMessage = message;
@@ -442,6 +508,11 @@ namespace AdvancedRoadNaming.Systems
             }
 
             _savedRouteReview = review;
+            _mode = review.RouteMode;
+            _inputText = review.InputValue ?? string.Empty;
+            _routeNumberPlacement = review.RouteNumberPlacement;
+            _routeShieldStyle = review.RouteShieldStyle;
+            _routeShieldImportId = review.RouteShieldImportId ?? string.Empty;
             _selectedSavedRouteId = routeId;
             LoadSavedRoutePreview(review.CandidateSegments, review.CandidateWaypoints);
             _selectionController.Clear();
@@ -454,6 +525,9 @@ namespace AdvancedRoadNaming.Systems
 
         public bool BeginModifySavedRoute(long routeId)
         {
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
             SavedRouteReviewSession review;
             string message;
             if (_savedRouteReview != null && _savedRouteReview.RouteId == routeId && _savedRouteReview.Mode == SavedRouteReviewMode.RebuildPreview)
@@ -465,6 +539,8 @@ namespace AdvancedRoadNaming.Systems
                     RouteMode = _savedRouteReview.RouteMode,
                     InputValue = _savedRouteReview.InputValue,
                     RouteNumberPlacement = _savedRouteReview.RouteNumberPlacement,
+                    RouteShieldStyle = _savedRouteReview.RouteShieldStyle,
+                    RouteShieldImportId = _savedRouteReview.RouteShieldImportId,
                     Message = $"Modify mode active for route #{routeId}. Drag existing waypoints or the route line to edit, then commit or cancel.",
                     IsDirty = false
                 };
@@ -484,6 +560,8 @@ namespace AdvancedRoadNaming.Systems
             _mode = review.RouteMode;
             _inputText = review.InputValue ?? string.Empty;
             _routeNumberPlacement = review.RouteNumberPlacement;
+            _routeShieldStyle = review.RouteShieldStyle;
+            _routeShieldImportId = review.RouteShieldImportId ?? string.Empty;
             _selectionController.LoadRoute(review.CandidateWaypoints, review.CandidateSegments);
             _savedRoutePreviewSegments.Clear();
             _savedRoutePreviewWaypoints.Clear();
@@ -521,6 +599,40 @@ namespace AdvancedRoadNaming.Systems
             }
 
             return CancelSavedRouteReview(_savedRouteReview.RouteId);
+        }
+
+        public bool CleanupSavedRouteWaypointsAndBeginManipulate(long routeId)
+        {
+            if (routeId <= 0)
+                routeId = _selectedSavedRouteId;
+
+            if (routeId <= 0)
+            {
+                _statusMessage = "Select a saved route before cleaning up waypoint anchors.";
+                return false;
+            }
+
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
+            if (!_metadataSystem.CleanupSavedRouteOrphanWaypoints(routeId, out var removed, out var remaining, out var message))
+            {
+                _statusMessage = message;
+                return false;
+            }
+
+            MarkSavedRoutesJsonDirty();
+            _manageOverlayVersion++;
+            SelectSavedRoute(routeId);
+
+            if (remaining < 2)
+            {
+                _statusMessage = message;
+                return false;
+            }
+
+            Mod.log.Info(() => $"Road Naming: cleanup before manipulate complete. RouteId={routeId}, Removed={removed}, Remaining={remaining}.");
+            return BeginModifySavedRoute(routeId);
         }
 
         public bool AcceptSavedRouteReview(long routeId)
@@ -574,13 +686,21 @@ namespace AdvancedRoadNaming.Systems
 
         public bool ReapplySavedRoute(long routeId)
         {
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
             if (!TryBeginApplyCooldown("ReapplySavedRoute"))
                 return false;
 
-            if (_savedRouteReview != null && _savedRouteReview.Mode == SavedRouteReviewMode.Modify && _savedRouteReview.RouteId == routeId)
+            if (_savedRouteReview != null && _savedRouteReview.RouteId == routeId)
             {
-                var finalWaypoints = _selectionController.Waypoints;
-                var finalSegments = _selectionController.SelectedSegments;
+                var isModifyReview = _savedRouteReview.Mode == SavedRouteReviewMode.Modify;
+                var finalWaypoints = isModifyReview
+                    ? _selectionController.Waypoints
+                    : _savedRouteReview.CandidateWaypoints;
+                var finalSegments = isModifyReview
+                    ? _selectionController.SelectedSegments
+                    : _savedRouteReview.CandidateSegments;
                 if (!_metadataSystem.CommitSavedRouteReview(routeId, finalWaypoints, finalSegments, _routeNumberPlacement, out var commitMessage))
                 {
                     _statusMessage = commitMessage;
@@ -594,7 +714,7 @@ namespace AdvancedRoadNaming.Systems
                 _manageOverlayVersion++;
                 SetSavedRoutesViewActive(true, false);
                 PreviewSavedRoute(routeId);
-                Mod.log.Info(() => $"Road Naming: manipulated saved route applied. RouteId={routeId}.");
+                Mod.log.Info(() => $"Road Naming: saved route review applied. RouteId={routeId}, ReviewMode={(isModifyReview ? "Modify" : "Rebuild")}.");
                 return true;
             }
 
@@ -623,7 +743,13 @@ namespace AdvancedRoadNaming.Systems
             if (!TryBeginApplyCooldown("ReapplyAllSavedRoutes"))
                 return false;
 
-            var result = _metadataSystem.ReapplyAllSavedRoutes(out var reapplied, out var failed, out var message);
+            if (!IsSavedRouteModeAvailable(_mode))
+            {
+                _statusMessage = "Saved rename routes are disabled.";
+                return false;
+            }
+
+            var result = _metadataSystem.ReapplyAllSavedRoutes(_mode, out var reapplied, out var failed, out var message);
             _statusMessage = message;
             if (reapplied > 0)
             {
@@ -720,6 +846,9 @@ namespace AdvancedRoadNaming.Systems
 
         public bool DeleteSavedRoute(long routeId)
         {
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
             var result = _metadataSystem.DeleteSavedRoute(routeId, out var message);
             if (result)
             {
@@ -752,6 +881,9 @@ namespace AdvancedRoadNaming.Systems
 
         public bool UpdateSavedRouteInput(long routeId, string inputValue)
         {
+            if (!TryGetSavedRouteForActiveMode(routeId, out _))
+                return false;
+
             var result = _metadataSystem.UpdateSavedRouteInput(routeId, inputValue, out var message);
             if (result)
             {
@@ -764,7 +896,31 @@ namespace AdvancedRoadNaming.Systems
 
         public bool UpdateSavedRoutePlacement(long routeId, RouteNumberPlacement placement)
         {
+            if (_mode != RoadRouteToolMode.AssignMajorRouteNumber || !TryGetSavedRouteForActiveMode(routeId, out _))
+            {
+                _statusMessage = "Route-number placement is only available for numbered routes.";
+                return false;
+            }
+
             var result = _metadataSystem.UpdateSavedRoutePlacement(routeId, placement, out var message);
+            if (result)
+            {
+                MarkSavedRoutesJsonDirty();
+                _manageOverlayVersion++;
+            }
+            _statusMessage = message;
+            return result;
+        }
+
+        public bool UpdateSavedRouteShieldStyle(long routeId, RouteShieldStyle shieldStyle, string shieldImportId)
+        {
+            if (_mode != RoadRouteToolMode.AssignMajorRouteNumber || !TryGetSavedRouteForActiveMode(routeId, out _))
+            {
+                _statusMessage = "Route shields are only available for numbered routes.";
+                return false;
+            }
+
+            var result = _metadataSystem.UpdateSavedRouteShieldStyle(routeId, shieldStyle, shieldImportId, out var message);
             if (result)
             {
                 MarkSavedRoutesJsonDirty();
@@ -810,6 +966,8 @@ namespace AdvancedRoadNaming.Systems
             if (_selectionController == null)
                 return inputDeps;
 
+            RefreshSavedRenameRoutesFeatureState();
+
             if (!_isRunning)
             {
                 _selectionController.SetHovered(Entity.Null);
@@ -843,9 +1001,57 @@ namespace AdvancedRoadNaming.Systems
             }
 
             UpdateHoveredWaypoint();
-            UpdateWaypointRemovalState(rightClickPressed, rightClickHeld);
 
             EnableToolActions(true);
+
+            if (_selectionController.HasActiveWaypointEdit)
+            {
+                if (rightClickPressed)
+                {
+                    _selectionController.CancelActiveEdit();
+                    ResetPointerInteractionState();
+                    _statusMessage = "Waypoint edit canceled.";
+                    return inputDeps;
+                }
+
+                if (leftClickPressed && !_activeEditPointerDown)
+                    BeginActiveEditPointer();
+
+                if (_activeEditPointerDown && leftClickHeld)
+                    UpdateActiveEditDragState();
+
+                if (leftClickReleased && _activeEditPointerDown)
+                {
+                    if (!_activeEditPointerMoved && !_selectionController.HasActiveInsertEdit)
+                    {
+                        _selectionController.CancelActiveEdit();
+                        _statusMessage = _selectionController.BuildRouteInstruction();
+                        ResetActiveEditPointerState();
+                        return inputDeps;
+                    }
+
+                    var committed = _selectionController.CommitActiveEdit();
+                    _statusMessage = committed ? _selectionController.BuildRouteInstruction() : _selectionController.Warning;
+                    if (committed)
+                    {
+                        MarkModifyReviewDirty();
+                        Mod.log.Info(() => $"Road Naming: waypoint edit committed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
+                    }
+                    else
+                    {
+                        Mod.log.Warn(() => $"Road Naming: waypoint edit rejected: {_selectionController.Warning}");
+                    }
+
+                    ResetActiveEditPointerState();
+                    return inputDeps;
+                }
+
+                _statusMessage = _selectionController.BuildRouteInstruction();
+
+                return inputDeps;
+            }
+
+            UpdateWaypointRemovalState(rightClickPressed, rightClickHeld);
 
             if (rightClickReleased)
             {
@@ -865,54 +1071,27 @@ namespace AdvancedRoadNaming.Systems
                 return inputDeps;
             }
 
-            if (_selectionController.HasActiveWaypointEdit)
-            {
-                if (leftClickPressed && !_activeEditPointerDown)
-                    BeginActiveEditPointer(false);
-
-                if (_activeEditPointerDown && leftClickHeld)
-                    UpdateActiveEditDragState();
-
-                if (leftClickReleased && _activeEditPointerDown)
-                {
-                    var keepSelected = _activeEditStartedWithCurrentPress && !_activeEditPointerMoved;
-                    if (keepSelected)
-                    {
-                        _statusMessage = _selectionController.BuildRouteInstruction();
-                        Mod.log.Info(() => $"Road Naming: waypoint selected for move. WaypointIndex={_selectionController.ActiveEditIndex}.");
-                    }
-                    else
-                    {
-                        var committed = _selectionController.CommitActiveEdit();
-                        _statusMessage = committed ? _selectionController.BuildRouteInstruction() : _selectionController.Warning;
-                        if (committed)
-                        {
-                            MarkModifyReviewDirty();
-                            Mod.log.Info(() => $"Road Naming: waypoint edit committed. Waypoints={_selectionController.WaypointCount}, Segments={_selectionController.SelectedSegments.Count}");
-                        }
-                        else
-                        {
-                            Mod.log.Warn(() => $"Road Naming: waypoint edit rejected: {_selectionController.Warning}");
-                        }
-                    }
-
-                    ResetActiveEditPointerState();
-                    return inputDeps;
-                }
-
-                _statusMessage = _selectionController.BuildRouteInstruction();
-
-                return inputDeps;
-            }
-
             if (leftClickPressed)
             {
                 Mod.log.Info(() => $"Road Naming: click received. Hovered={HoveredSegment.Index}, Waypoints={WaypointCount}");
-                if (_selectionController.TryBeginEditFromHover())
+                if (SavedRouteManipulateMode)
                 {
-                    BeginActiveEditPointer(true);
-                    _statusMessage = _selectionController.BuildRouteInstruction();
-                    Mod.log.Info(() => $"Road Naming: waypoint edit started. ExistingWaypoint={_selectionController.HasHoveredRouteWaypoint}, Insertion={_selectionController.HasHoveredRouteInsertion}, Waypoints={WaypointCount}");
+                    if (_selectionController.TryBeginEditFromHover())
+                    {
+                        BeginActiveEditPointer();
+                        _statusMessage = _selectionController.BuildRouteInstruction();
+                        Mod.log.Info(() => $"Road Naming: waypoint edit started. ExistingWaypoint={_selectionController.HasHoveredRouteWaypoint}, Insertion={_selectionController.HasHoveredRouteInsertion}, Waypoints={WaypointCount}");
+                    }
+                    else if (_selectionController.TryBeginInsertFromNearestWaypoint())
+                    {
+                        BeginActiveEditPointer();
+                        _statusMessage = _selectionController.BuildRouteInstruction();
+                        Mod.log.Info(() => $"Road Naming: nearest-waypoint insert started. ActiveIndex={_selectionController.ActiveEditIndex}, Waypoints={WaypointCount}");
+                    }
+                    else
+                    {
+                        _statusMessage = _selectionController.BuildRouteInstruction();
+                    }
                 }
                 else
                 {
@@ -923,18 +1102,23 @@ namespace AdvancedRoadNaming.Systems
             return inputDeps;
         }
 
-        private void BeginActiveEditPointer(bool startedWithCurrentPress)
+        private void BeginActiveEditPointer()
         {
             _activeEditPointerDown = true;
-            _activeEditStartedWithCurrentPress = startedWithCurrentPress;
             _activeEditPointerMoved = false;
             _activeEditPointerStartPosition = _selectionController.HoveredWaypoint?.Position ?? float3.zero;
         }
 
         private void UpdateActiveEditDragState()
         {
-            if (_activeEditPointerMoved || !_selectionController.HoveredWaypoint.HasValue)
+            if (_activeEditPointerMoved)
                 return;
+
+            if (!_selectionController.HoveredWaypoint.HasValue)
+            {
+                _activeEditPointerMoved = true;
+                return;
+            }
 
             var currentPosition = _selectionController.HoveredWaypoint.Value.Position;
             if (math.distance(_activeEditPointerStartPosition, currentPosition) > WaypointDragThreshold)
@@ -954,7 +1138,6 @@ namespace AdvancedRoadNaming.Systems
         private void ResetActiveEditPointerState()
         {
             _activeEditPointerDown = false;
-            _activeEditStartedWithCurrentPress = false;
             _activeEditPointerMoved = false;
             _activeEditPointerStartPosition = float3.zero;
         }
@@ -980,10 +1163,12 @@ namespace AdvancedRoadNaming.Systems
             if (_selectionController == null)
                 return;
 
-            if (TryGetSnappedWaypoint(out var waypoint))
+            var allowRouteEditSnap = SavedRouteManipulateMode;
+            var enforceSnapRadius = SavedRouteManipulateMode && _selectionController.HasActiveWaypointEdit;
+            if (TryGetSnappedWaypoint(out var waypoint, enforceSnapRadius ? ManipulationSnapRadius : float.MaxValue))
             {
                 var previousHover = _selectionController.HoveredSegment;
-                _selectionController.SetHovered(waypoint);
+                _selectionController.SetHovered(waypoint, allowRouteEditSnap);
                 if (previousHover != waypoint.Segment)
                 {
                     var previewSegments = _selectionController.PreviewSegments;
@@ -996,7 +1181,7 @@ namespace AdvancedRoadNaming.Systems
             _selectionController.SetHovered(Entity.Null);
         }
 
-        private bool TryGetSnappedWaypoint(out RoadRouteWaypoint waypoint)
+        private bool TryGetSnappedWaypoint(out RoadRouteWaypoint waypoint, float maxSnapDistance)
         {
             waypoint = default;
             Entity entity;
@@ -1005,15 +1190,15 @@ namespace AdvancedRoadNaming.Systems
                 return false;
 
             if (_metadataSystem.Validation.IsValidRoadSegment(entity))
-                return TryCreateWaypointOnSegment(entity, hit.m_Position, out waypoint);
+                return TryCreateWaypointOnSegment(entity, hit.m_Position, maxSnapDistance, out waypoint);
 
             if (EntityManager.HasComponent<Node>(entity))
-                return TryCreateWaypointFromNode(entity, hit.m_Position, out waypoint);
+                return TryCreateWaypointFromNode(entity, hit.m_Position, maxSnapDistance, out waypoint);
 
             return false;
         }
 
-        private bool TryCreateWaypointFromNode(Entity node, float3 hitPosition, out RoadRouteWaypoint waypoint)
+        private bool TryCreateWaypointFromNode(Entity node, float3 hitPosition, float maxSnapDistance, out RoadRouteWaypoint waypoint)
         {
             waypoint = default;
             if (!EntityManager.HasBuffer<ConnectedEdge>(node))
@@ -1052,11 +1237,14 @@ namespace AdvancedRoadNaming.Systems
             if (bestSegment == Entity.Null)
                 return false;
 
+            if (bestDistance > maxSnapDistance)
+                return false;
+
             waypoint = new RoadRouteWaypoint(bestSegment, bestPosition, bestCurvePosition);
             return true;
         }
 
-        private bool TryCreateWaypointOnSegment(Entity segment, float3 hitPosition, out RoadRouteWaypoint waypoint)
+        private bool TryCreateWaypointOnSegment(Entity segment, float3 hitPosition, float maxSnapDistance, out RoadRouteWaypoint waypoint)
         {
             waypoint = default;
             if (!_metadataSystem.Validation.IsValidRoadSegment(segment))
@@ -1064,12 +1252,16 @@ namespace AdvancedRoadNaming.Systems
 
             var curvePosition = 0.5f;
             var snappedPosition = hitPosition;
+            var distance = 0f;
             if (EntityManager.HasComponent<Curve>(segment))
             {
                 var curve = EntityManager.GetComponentData<Curve>(segment);
-                MathUtils.Distance(curve.m_Bezier.xz, hitPosition.xz, out curvePosition);
+                distance = MathUtils.Distance(curve.m_Bezier.xz, hitPosition.xz, out curvePosition);
                 snappedPosition = MathUtils.Position(curve.m_Bezier, curvePosition);
             }
+
+            if (distance > maxSnapDistance)
+                return false;
 
             waypoint = new RoadRouteWaypoint(segment, snappedPosition, curvePosition);
             return true;
@@ -1088,12 +1280,12 @@ namespace AdvancedRoadNaming.Systems
             RoadRouteWaypoint waypoint;
             if (_metadataSystem.Validation.IsValidRoadSegment(entity))
             {
-                if (!TryCreateWaypointOnSegment(entity, hit.m_Position, out waypoint))
+                if (!TryCreateWaypointOnSegment(entity, hit.m_Position, float.MaxValue, out waypoint))
                     return false;
             }
             else if (EntityManager.HasComponent<Node>(entity))
             {
-                if (!TryCreateWaypointFromNode(entity, hit.m_Position, out waypoint))
+                if (!TryCreateWaypointFromNode(entity, hit.m_Position, float.MaxValue, out waypoint))
                     return false;
             }
             else
@@ -1117,7 +1309,7 @@ namespace AdvancedRoadNaming.Systems
             var bestScore = float.MaxValue;
             foreach (var route in _metadataSystem.RouteDatabase.Routes)
             {
-                if (route == null || route.IsDeleted)
+                if (route == null || route.IsDeleted || route.Mode != _mode || !IsSavedRouteModeAvailable(route.Mode))
                     continue;
 
                 if (!RouteContainsSegment(route, waypoint.Segment))
@@ -1135,6 +1327,56 @@ namespace AdvancedRoadNaming.Systems
             }
 
             return routeId > 0;
+        }
+
+        private bool IsSavedRouteModeAvailable(RoadRouteToolMode mode)
+        {
+            return mode != RoadRouteToolMode.RenameSelectedSegments || SavedRenameRoutesEnabled;
+        }
+
+        private bool TryGetSavedRouteForActiveMode(long routeId, out SavedRouteRecord route)
+        {
+            route = null;
+            if (_metadataSystem == null
+                || !IsSavedRouteModeAvailable(_mode)
+                || !_metadataSystem.RouteDatabase.TryGet(routeId, out route)
+                || route == null
+                || route.IsDeleted
+                || route.Mode != _mode)
+            {
+                _statusMessage = $"Saved route {routeId} is not available in the current mode.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void RefreshSavedRenameRoutesFeatureState()
+        {
+            var enabled = SavedRenameRoutesEnabled;
+            if (_savedRenameRoutesStateInitialized && enabled == _observedSavedRenameRoutesEnabled)
+                return;
+
+            _savedRenameRoutesStateInitialized = true;
+            _observedSavedRenameRoutesEnabled = enabled;
+            MarkSavedRoutesJsonDirty();
+            _manageOverlayVersion++;
+            _metadataSystem?.InvalidateProtectedAggregateRegistry(enabled ? "SavedRenameRoutesEnabled" : "SavedRenameRoutesDisabled");
+
+            if (enabled || _mode != RoadRouteToolMode.RenameSelectedSegments)
+                return;
+
+            _routeMenuActive = false;
+            _savedRoutesViewActive = false;
+            _savedRouteReview = null;
+            _roadNameEditRouteId = 0;
+            _selectedSavedRouteId = 0;
+            _selectionController.Clear();
+            _selectionController.SetHovered(Entity.Null);
+            _savedRoutePreviewSegments.Clear();
+            _savedRoutePreviewWaypoints.Clear();
+            ResetPointerInteractionState();
+            _statusMessage = "Direct road renaming active. Place first waypoint on a road.";
         }
 
         private static bool RouteContainsSegment(SavedRouteRecord route, Entity segment)

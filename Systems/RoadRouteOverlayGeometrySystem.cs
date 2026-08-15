@@ -62,7 +62,9 @@ namespace AdvancedRoadNaming.Systems
 
         private void BuildManagedRouteGeometry()
         {
-            var manageOverlayActive = _toolSystem != null && (_toolSystem.SavedRoutesViewActive || _toolSystem.SavedRouteManipulateMode);
+            var manageOverlayActive = _toolSystem != null
+                && (_toolSystem.Mode != RoadRouteToolMode.RenameSelectedSegments || _toolSystem.SavedRenameRoutesEnabled)
+                && (_toolSystem.SavedRoutesViewActive || _toolSystem.SavedRouteManipulateMode);
             if (!manageOverlayActive || _metadataSystem == null)
             {
                 if (_managedRouteGroups.Count > 0)
@@ -80,13 +82,13 @@ namespace AdvancedRoadNaming.Systems
 
             foreach (var route in _metadataSystem.RouteDatabase.Routes)
             {
-                if (route == null || route.IsDeleted)
+                if (route == null || route.IsDeleted || route.Mode != _toolSystem.Mode)
                     continue;
 
                 if (_toolSystem.SavedRouteManipulateMode && route.RouteId == _toolSystem.SelectedSavedRouteId)
                     continue;
 
-                var group = RentManagedRouteGroup(route.RouteId, !_toolSystem.SavedRouteManipulateMode && route.RouteId == _toolSystem.SelectedSavedRouteId);
+                var group = RentManagedRouteGroup(route.RouteId, route.Mode, !_toolSystem.SavedRouteManipulateMode && route.RouteId == _toolSystem.SelectedSavedRouteId);
 
                 RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, route.OrderedSegmentIds, route.Waypoints, group.Curves, group.Nodes);
                 if (group.Curves.Count == 0 && group.Nodes.Count == 0)
@@ -99,7 +101,7 @@ namespace AdvancedRoadNaming.Systems
             }
         }
 
-        private RouteOverlayGeometryGroup RentManagedRouteGroup(long routeId, bool selected)
+        private RouteOverlayGeometryGroup RentManagedRouteGroup(long routeId, RoadRouteToolMode mode, bool selected)
         {
             RouteOverlayGeometryGroup group;
             if (_managedRouteGroupPool.Count == 0)
@@ -115,6 +117,7 @@ namespace AdvancedRoadNaming.Systems
 
             group.Clear();
             group.RouteId = routeId;
+            group.Mode = mode;
             group.Selected = selected;
             return group;
         }

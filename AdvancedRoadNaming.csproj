@@ -95,6 +95,12 @@
 		<Reference Include="Unity.InputSystem">
 			<Private>false</Private>
 		</Reference>
+		<Reference Include="Unity.TextMeshPro">
+			<Private>false</Private>
+		</Reference>
+		<Reference Include="UnityEngine.UI">
+			<Private>false</Private>
+		</Reference>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -105,6 +111,9 @@
 			<Private>false</Private>
 		</Reference>
 		<Reference Update="System.Data">
+			<Private>false</Private>
+		</Reference>
+		<Reference Update="System.Runtime.Serialization">
 			<Private>false</Private>
 		</Reference>
 	</ItemGroup>

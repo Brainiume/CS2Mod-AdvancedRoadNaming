@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "JapanNational",
+  "name": "Japan National Route",
+  "region": "Japan",
+  "system": "National",
+  "svg": "Japanese_National_Route_Sign_Blank.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": -2.5, "scalePercent": 62, "rotationDegrees": 0 }
+  ]
+}

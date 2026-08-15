@@ -14,6 +14,8 @@ namespace AdvancedRoadNaming.Services
 
         public int Count => _routes.Count;
 
+        public int Version { get; private set; }
+
         public long NextRouteId
         {
             get => _nextRouteId;
@@ -27,9 +29,10 @@ namespace AdvancedRoadNaming.Services
 
             _routes.Clear();
             _nextRouteId = 1;
+            Version++;
         }
 
-        public SavedRouteRecord CreateRoute(string title, RoadRouteToolMode mode, string inputValue, RouteNumberPlacement placement, IReadOnlyList<RoadRouteWaypoint> waypoints, IReadOnlyList<Entity> segments, IReadOnlyList<string> streetNames)
+        public SavedRouteRecord CreateRoute(string title, RoadRouteToolMode mode, string inputValue, RouteNumberPlacement placement, RouteShieldStyle shieldStyle, string shieldImportId, IReadOnlyList<RoadRouteWaypoint> waypoints, IReadOnlyList<Entity> segments, IReadOnlyList<string> streetNames)
         {
             var now = DateTime.UtcNow.Ticks;
             var route = new SavedRouteRecord
@@ -41,6 +44,8 @@ namespace AdvancedRoadNaming.Services
                 RouteCode = inputValue?.Trim() ?? string.Empty,
                 RoutePrefixType = ResolveRoutePrefixType(inputValue),
                 RouteNumberPlacement = placement,
+                RouteShieldStyle = shieldStyle,
+                RouteShieldImportId = shieldStyle == RouteShieldStyle.Imported ? shieldImportId : null,
                 CreatedAtUtcTicks = now,
                 UpdatedAtUtcTicks = now,
                 LastAppliedUtcTicks = now
@@ -49,6 +54,7 @@ namespace AdvancedRoadNaming.Services
             CopyRouteGeometry(route, waypoints, segments, streetNames);
             PopulateRouteIntentMetadata(route);
             _routes.Add(route);
+            Version++;
             return route;
         }
 
@@ -77,6 +83,7 @@ namespace AdvancedRoadNaming.Services
                         _routes[i].ClearStoredData();
 
                     _routes.RemoveAt(i);
+                    Version++;
                     return true;
                 }
             }
@@ -98,6 +105,9 @@ namespace AdvancedRoadNaming.Services
                 removed++;
             }
 
+            if (removed > 0)
+                Version++;
+
             return removed;
         }
 
@@ -109,6 +119,7 @@ namespace AdvancedRoadNaming.Services
             route.DisplayTitle = title.Trim();
             route.IsUserDefinedTitle = true;
             route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            Version++;
             return true;
         }
 
@@ -121,6 +132,7 @@ namespace AdvancedRoadNaming.Services
             route.RouteCode = route.BaseInputValue;
             route.RoutePrefixType = ResolveRoutePrefixType(route.BaseInputValue);
             route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            Version++;
             return true;
         }
 
@@ -131,6 +143,19 @@ namespace AdvancedRoadNaming.Services
 
             route.RouteNumberPlacement = placement;
             route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            Version++;
+            return true;
+        }
+
+        public bool UpdateShieldStyle(long routeId, RouteShieldStyle shieldStyle, string shieldImportId)
+        {
+            if (!TryGet(routeId, out var route))
+                return false;
+
+            route.RouteShieldStyle = shieldStyle;
+            route.RouteShieldImportId = shieldStyle == RouteShieldStyle.Imported ? shieldImportId : null;
+            route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            Version++;
             return true;
         }
 
@@ -154,6 +179,7 @@ namespace AdvancedRoadNaming.Services
             route.RouteNumberPlacement = placement;
             PopulateRouteIntentMetadata(route);
             route.UpdatedAtUtcTicks = DateTime.UtcNow.Ticks;
+            Version++;
         }
 
         public SavedRouteStatus EvaluateStatus(SavedRouteRecord route, SegmentValidationService validation)
@@ -185,6 +211,7 @@ namespace AdvancedRoadNaming.Services
             _routes.Add(route);
             if (route.RouteId >= _nextRouteId)
                 _nextRouteId = route.RouteId + 1;
+            Version++;
         }
 
         private static void CopyRouteGeometry(SavedRouteRecord route, IReadOnlyList<RoadRouteWaypoint> waypoints, IReadOnlyList<Entity> segments, IReadOnlyList<string> streetNames)
@@ -238,7 +265,7 @@ namespace AdvancedRoadNaming.Services
                 return "None";
 
             var first = value[0].ToString();
-            return first == "M" || first == "A" || first == "B" || first == "C" ? first : "Custom";
+            return first == "M" || first == "A" || first == "B" || first == "C" || first == "I" ? first : "Custom";
         }
     }
 }

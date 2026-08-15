@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "SouthAfricaRegional",
+  "name": "South Africa Regional Route",
+  "region": "South Africa",
+  "system": "State",
+  "svg": "SA_road_R.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": 5, "scalePercent": 66, "rotationDegrees": 0 }
+  ]
+}

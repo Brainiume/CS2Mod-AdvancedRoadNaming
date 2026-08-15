@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Road Naming - Route Shield Designer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #11161b;
+      --surface: #1b232a;
+      --surface-2: #222d35;
+      --line: #34424d;
+      --text: #eef4f7;
+      --muted: #a8b6c0;
+      --cyan: #37b9e9;
+      --purple: #a855f7;
+      --green: #4dcc8a;
+      --red: #ff6b6b;
+      --amber: #ffbd59;
+      --radius: 7px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font: 15px/1.5 "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select, textarea { font: inherit; letter-spacing: 0; }
+
+    button {
+      min-height: 38px;
+      padding: 8px 14px;
+      border: 1px solid #49606f;
+      border-radius: 5px;
+      color: var(--text);
+      background: #26333c;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--cyan); background: #30414d; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    button.primary { border-color: #6d2fb1; background: #7133a7; }
+    button.primary:hover { border-color: #c18aff; background: #8641bd; }
+    button.danger { border-color: #7c4444; color: #ffd4d4; background: #3b292b; }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #43535f;
+      border-radius: 4px;
+      color: var(--text);
+      background: #12191e;
+      outline: none;
+    }
+
+    input, select { height: 38px; padding: 6px 9px; }
+    textarea { min-height: 140px; padding: 10px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { border-color: var(--cyan); }
+    input[readonly] { color: #c3ccd2; background: #171e23; }
+
+    code, pre { font-family: Consolas, "Courier New", monospace; }
+    code { color: #bfe8f6; }
+
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      background: #182027;
+    }
+
+    .topbar-inner, .page {
+      width: min(1460px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar-inner { padding: 22px 0 18px; }
+    h1 { margin: 0; font-size: 27px; font-weight: 650; }
+    .subtitle { margin-top: 4px; color: var(--muted); }
+
+    .page { padding: 20px 0 56px; }
+
+    .notice {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--amber);
+      background: #29261e;
+      color: #ffe1a3;
+    }
+
+    .workspace {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+    }
+
+    .editor { flex: 1 1 760px; min-width: 0; }
+    .preview-column { flex: 0 0 430px; min-width: 0; position: sticky; top: 16px; }
+
+    .section {
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 48px;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+
+    .section-header h2 { margin: 0; font-size: 17px; font-weight: 650; }
+    .section-body { padding: 14px; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .file-input { display: none; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field { min-width: 0; }
+    .field.wide { grid-column: 1 / -1; }
+    .field label { display: block; margin-bottom: 5px; color: #d8e1e6; font-size: 13px; font-weight: 600; }
+    .help { margin-top: 4px; color: var(--muted); font-size: 12px; }
+
+    .layer {
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #3a4a55;
+      border-radius: 6px;
+      background: #171f25;
+    }
+
+    .layer:last-child { margin-bottom: 0; }
+    .layer-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .layer-title strong { color: #dce8ee; }
+    .layer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .layer-grid .span-2 { grid-column: span 2; }
+
+    .preview-stage {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 350px;
+      overflow: hidden;
+      background-color: #0e1418;
+      background-image: linear-gradient(45deg, #172027 25%, transparent 25%), linear-gradient(-45deg, #172027 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #172027 75%), linear-gradient(-45deg, transparent 75%, #172027 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+
+    .shield-canvas {
+      position: relative;
+      flex: 0 0 auto;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-weight: 700;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .shield-canvas img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .preview-layer {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      white-space: nowrap;
+      transform-origin: 50% 50%;
+    }
+
+    .empty-preview { max-width: 280px; color: var(--muted); text-align: center; }
+    .preview-controls { display: grid; grid-template-columns: 1fr 110px; gap: 10px; margin-top: 12px; }
+
+    .status {
+      min-height: 42px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--muted);
+      background: #141b20;
+    }
+
+    .status.ok { border-color: #2f7654; color: #9de6bd; }
+    .status.error { border-color: #874747; color: #ffb3b3; }
+    .json-output { height: 330px; white-space: pre; }
+
+    .reference { margin-top: 24px; }
+    .reference h2 { margin: 28px 0 8px; font-size: 22px; }
+    .reference h3 { margin: 20px 0 7px; font-size: 17px; }
+    .reference p, .reference li { color: #cad5dc; }
+    .reference table { width: 100%; border-collapse: collapse; background: var(--surface); }
+    .reference th, .reference td { padding: 9px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .reference th { background: var(--surface-2); }
+    .reference pre { overflow: auto; padding: 13px; border: 1px solid var(--line); border-radius: 6px; background: #0f151a; color: #c9ecf8; }
+    .limits { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { padding: 5px 9px; border: 1px solid #466171; border-radius: 999px; color: #cce3ee; background: #1d2b34; }
+
+    @media (max-width: 1050px) {
+      .workspace { flex-direction: column; }
+      .preview-column { position: static; flex: 1 1 auto; width: 100%; }
+    }
+
+    @media (max-width: 700px) {
+      .topbar-inner, .page { width: min(100% - 20px, 1460px); }
+      .form-grid, .layer-grid { grid-template-columns: 1fr; }
+      .field.wide, .layer-grid .span-2 { grid-column: auto; }
+      .preview-controls { grid-template-columns: 1fr; }
+      .preview-stage { height: 290px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>Route Shield Designer</h1>
+      <div class="subtitle">Advanced Road Naming custom shield definition builder</div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="notice"><strong>Work in progress.</strong> Let the mod generate a JSON file first, then load it here. This preserves the stable id required by saved routes.</div>
+
+    <div class="workspace">
+      <div class="editor">
+        <section class="section">
+          <div class="section-header"><h2>Files</h2></div>
+          <div class="section-body">
+            <div class="toolbar">
+              <button type="button" id="loadJsonButton">Load existing JSON</button>
+              <button type="button" id="loadSvgButton">Load SVG preview</button>
+              <button type="button" id="resetButton">Reset form</button>
+              <input class="file-input" id="jsonFile" type="file" accept="application/json,.json">
+              <input class="file-input" id="svgFile" type="file" accept="image/svg+xml,.svg">
+            </div>
+            <div class="help">Recommended: add the SVG to ModsData, refresh shields in the game, and load the JSON that the mod creates beside it.</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header"><h2>Shield details</h2></div>
+          <div class="section-body form-grid">
+            <div class="field">
+              <label for="shieldName">Display name</label>
+              <input id="shieldName" data-field="name" maxlength="100" value="My Custom Shield">
+            </div>
+            <div class="field">
+              <label for="shieldRegion">Country or region</label>
+              <input id="shieldRegion" data-field="region" maxlength="60" value="Custom">
+            </div>
+            <div class="field">
+              <label for="shieldSystem">Road system</label>
+              <select id="shieldSystem" data-field="system">
+                <option>Custom</option>
+                <option>National</option>
+                <option>Motorway</option>
+                <option>State</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="svgName">SVG filename</label>
+              <input id="svgName" data-field="svg" value="MyShield.svg">
+            </div>
+            <div class="field">
+              <label for="widthRem">Canvas width</label>
+              <input id="widthRem" data-field="widthRem" type="number" min="8" max="256" step="0.1" value="34">
+            </div>
+            <div class="field">
+              <label for="heightRem">Canvas height</label>
+              <input id="heightRem" data-field="heightRem" type="number" min="8" max="256" step="0.1" value="34">
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h2>Text layers</h2>
+            <button type="button" id="addLayerButton">Add layer</button>
+          </div>
+          <div class="section-body" id="layers"></div>
+        </section>
+      </div>
+
+      <aside class="preview-column">
+        <section class="section">
+          <div class="section-header"><h2>Live preview</h2></div>
+          <div class="section-body">
+            <div class="preview-stage" id="previewStage">
+              <div class="empty-preview" id="emptyPreview">Load the matching SVG to preview the artwork and text together.</div>
+              <div class="shield-canvas" id="shieldCanvas" hidden></div>
+            </div>
+            <div class="preview-controls">
+              <div class="field">
+                <label for="sampleCode">Sample route code</label>
+                <input id="sampleCode" value="A12">
+              </div>
+              <div class="field">
+                <label for="previewScale">Preview size</label>
+                <input id="previewScale" type="number" min="2" max="10" step="0.5" value="6">
+              </div>
+            </div>
+            <div class="status" id="status">Load a generated JSON file to begin.</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header"><h2>Generated JSON</h2></div>
+          <div class="section-body">
+            <textarea class="json-output" id="jsonOutput" readonly spellcheck="false"></textarea>
+            <div class="toolbar" style="margin-top:10px">
+              <button type="button" class="primary" id="downloadButton">Download JSON</button>
+              <button type="button" id="copyButton">Copy JSON</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <div class="reference">
+      <h2>How to use the files</h2>
+      <ol>
+        <li>Put an SVG in <code>ModsData\AdvancedRoadNaming\RouteShields</code> or a nested folder.</li>
+        <li>Use <strong>Refresh Route Shields</strong> in the mod settings. The mod creates a matching JSON if needed.</li>
+        <li>Load that JSON in this page, optionally load the SVG for a preview, and adjust the fields.</li>
+        <li>Download the JSON with the same base filename as the SVG and replace the old sidecar file.</li>
+        <li>Refresh shields again, then select the shield from <strong>Browse shields</strong>.</li>
+      </ol>
+
+      <h2>Text sources</h2>
+      <table>
+        <thead><tr><th>Source</th><th>Displays</th><th>Example for NH-7</th></tr></thead>
+        <tbody>
+          <tr><td><code>routeCode</code></td><td>The complete code</td><td>NH-7</td></tr>
+          <tr><td><code>prefix</code></td><td>Leading letters and optional hyphen</td><td>NH-</td></tr>
+          <tr><td><code>number</code></td><td>The remaining route number or value</td><td>7</td></tr>
+          <tr><td><code>literal</code></td><td>Fixed text from the layer's text field</td><td>NATIONAL</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Limits</h2>
+      <div class="limits">
+        <span class="chip">1 to 8 text layers</span>
+        <span class="chip">Canvas 8 to 256</span>
+        <span class="chip">Font size 1 to 128</span>
+        <span class="chip">Offsets -256 to 256</span>
+        <span class="chip">Scale 10% to 400%</span>
+        <span class="chip">Rotation -360 to 360</span>
+        <span class="chip">Colors #RRGGBB</span>
+        <span class="chip">SVG maximum 2 MB</span>
+        <span class="chip">JSON maximum 256 KB</span>
+        <span class="chip">128 custom shields</span>
+      </div>
+
+      <h2>Examples</h2>
+      <h3>Show letters and numbers together</h3>
+      <pre>"textLayers": [
+  {
+    "id": "route-code",
+    "source": "routeCode",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 21,
+    "offsetXRem": 0,
+    "offsetYRem": 0,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]</pre>
+
+      <h3>Put a prefix above a number</h3>
+      <pre>"textLayers": [
+  {
+    "id": "prefix",
+    "source": "prefix",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 9,
+    "offsetXRem": 0,
+    "offsetYRem": -8,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  },
+  {
+    "id": "route-number",
+    "source": "number",
+    "text": "",
+    "color": "#FFFFFF",
+    "fontSizeRem": 22,
+    "offsetXRem": 0,
+    "offsetYRem": 4,
+    "scalePercent": 100,
+    "rotationDegrees": 0
+  }
+]</pre>
+
+      <h3>Add a fixed header</h3>
+      <pre>{
+  "id": "header",
+  "source": "literal",
+  "text": "NATIONAL",
+  "color": "#FFFFFF",
+  "fontSizeRem": 7,
+  "offsetXRem": 0,
+  "offsetYRem": -10,
+  "scalePercent": 100,
+  "rotationDegrees": 0
+}</pre>
+
+      <h2>Important behavior</h2>
+      <ul>
+        <li>The generated id must not be changed. Moving or renaming the SVG changes its id and can disconnect saved routes.</li>
+        <li>Later text layers draw over earlier layers.</li>
+        <li>Positive X offsets move right. Positive Y offsets move down. Positive rotation is clockwise.</li>
+        <li>The game removes spaces and converts route codes to uppercase.</li>
+        <li>The in-game text uses the game UI font and shrinks to fit. This browser preview is an approximation.</li>
+        <li>Malformed definitions are reported in the mod settings and Player.log. The last valid loaded version remains active when possible.</li>
+        <li>Built-in definitions use the same schema, but mod updates can overwrite edits to bundled files.</li>
+      </ul>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var MAX_LAYERS = 8;
+      var state = {
+        schemaVersion: 1,
+        id: "",
+        name: "My Custom Shield",
+        region: "Custom",
+        system: "Custom",
+        svg: "MyShield.svg",
+        widthRem: 34,
+        heightRem: 34,
+        textLayers: [defaultLayer(1)]
+      };
+      var svgDataUrl = "";
+
+      var layersElement = document.getElementById("layers");
+      var jsonOutput = document.getElementById("jsonOutput");
+      var statusElement = document.getElementById("status");
+      var shieldCanvas = document.getElementById("shieldCanvas");
+      var emptyPreview = document.getElementById("emptyPreview");
+      var jsonFile = document.getElementById("jsonFile");
+      var svgFile = document.getElementById("svgFile");
+
+      function defaultLayer(index) {
+        return {
+          id: index === 1 ? "route-number" : "layer-" + index,
+          source: "number",
+          text: "",
+          color: "#FFFFFF",
+          fontSizeRem: 21,
+          offsetXRem: 0,
+          offsetYRem: 0,
+          scalePercent: 100,
+          rotationDegrees: 0
+        };
+      }
+
+      function numberValue(value, fallback) {
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function syncTopLevelFromForm() {
+        document.querySelectorAll("[data-field]").forEach(function (input) {
+          var field = input.getAttribute("data-field");
+          state[field] = field === "widthRem" || field === "heightRem"
+            ? numberValue(input.value, 0)
+            : input.value;
+        });
+      }
+
+      function syncFormFromState() {
+        document.querySelectorAll("[data-field]").forEach(function (input) {
+          var field = input.getAttribute("data-field");
+          input.value = state[field] == null ? "" : state[field];
+        });
+      }
+
+      function renderLayers() {
+        layersElement.innerHTML = state.textLayers.map(function (layer, index) {
+          return '<div class="layer" data-layer-index="' + index + '">' +
+            '<div class="layer-title"><strong>Layer ' + (index + 1) + '</strong>' +
+            '<button type="button" class="danger remove-layer"' + (state.textLayers.length === 1 ? ' disabled' : '') + '>Remove</button></div>' +
+            '<div class="layer-grid">' +
+            fieldHtml("Layer id", "id", layer.id, "text", "", "span-2") +
+            selectHtml("Text source", "source", layer.source) +
+            fieldHtml("Literal text", "text", layer.text, "text", "", "") +
+            fieldHtml("Text color", "color", layer.color, "text", "#RRGGBB", "") +
+            fieldHtml("Font size", "fontSizeRem", layer.fontSizeRem, "number", "1 to 128", "") +
+            fieldHtml("X offset", "offsetXRem", layer.offsetXRem, "number", "-256 to 256", "") +
+            fieldHtml("Y offset", "offsetYRem", layer.offsetYRem, "number", "-256 to 256", "") +
+            fieldHtml("Scale %", "scalePercent", layer.scalePercent, "number", "10 to 400", "") +
+            fieldHtml("Rotation", "rotationDegrees", layer.rotationDegrees, "number", "-360 to 360", "") +
+            '</div></div>';
+        }).join("");
+
+        layersElement.querySelectorAll(".layer").forEach(function (element) {
+          var index = Number(element.getAttribute("data-layer-index"));
+          element.querySelectorAll("[data-layer-field]").forEach(function (input) {
+            input.addEventListener("input", function () {
+              var field = input.getAttribute("data-layer-field");
+              state.textLayers[index][field] = input.type === "number"
+                ? numberValue(input.value, 0)
+                : input.value;
+              updateOutputAndPreview();
+            });
+            input.addEventListener("change", function () {
+              var field = input.getAttribute("data-layer-field");
+              state.textLayers[index][field] = input.type === "number"
+                ? numberValue(input.value, 0)
+                : input.value;
+              updateOutputAndPreview();
+            });
+          });
+          var removeButton = element.querySelector(".remove-layer");
+          removeButton.addEventListener("click", function () {
+            if (state.textLayers.length > 1) {
+              state.textLayers.splice(index, 1);
+              renderLayers();
+              updateOutputAndPreview();
+            }
+          });
+        });
+      }
+
+      function fieldHtml(label, field, value, type, placeholder, className) {
+        var limits = inputLimits(field);
+        return '<div class="field ' + className + '"><label>' + label + '</label>' +
+          '<input data-layer-field="' + field + '" type="' + type + '" value="' + escapeHtml(value) + '" placeholder="' + escapeHtml(placeholder) + '" ' + limits + '></div>';
+      }
+
+      function inputLimits(field) {
+        if (field === "fontSizeRem") return 'min="1" max="128" step="0.1"';
+        if (field === "offsetXRem" || field === "offsetYRem") return 'min="-256" max="256" step="0.1"';
+        if (field === "scalePercent") return 'min="10" max="400" step="1"';
+        if (field === "rotationDegrees") return 'min="-360" max="360" step="1"';
+        if (field === "id") return 'maxlength="60"';
+        if (field === "text") return 'maxlength="64"';
+        return "";
+      }
+
+      function selectHtml(label, field, selected) {
+        var options = ["routeCode", "prefix", "number", "literal"].map(function (value) {
+          return '<option' + (value === selected ? ' selected' : '') + '>' + value + '</option>';
+        }).join("");
+        return '<div class="field"><label>' + label + '</label><select data-layer-field="' + field + '">' + options + '</select></div>';
+      }
+
+      function validate() {
+        var errors = [];
+        if (state.schemaVersion !== 1) errors.push("schemaVersion must be 1");
+        if (!/^user-[0-9a-f]{20}$/.test(state.id || "")) errors.push("Load a generated custom JSON so its stable id is retained");
+        if (!state.name || state.name.length > 100) errors.push("name must contain 1 to 100 characters");
+        if (!state.region || state.region.length > 60) errors.push("region must contain 1 to 60 characters");
+        if (["National", "Motorway", "State", "Custom"].indexOf(state.system) < 0) errors.push("system is invalid");
+        if (!/^[^\\/:*?\"<>|]+\.svg$/i.test(state.svg || "")) errors.push("svg must be a sibling .svg filename without a path");
+        if (!inRange(state.widthRem, 8, 256) || !inRange(state.heightRem, 8, 256)) errors.push("canvas dimensions must be between 8 and 256");
+        if (!Array.isArray(state.textLayers) || state.textLayers.length < 1 || state.textLayers.length > MAX_LAYERS) errors.push("use between 1 and 8 text layers");
+
+        var ids = Object.create(null);
+        state.textLayers.forEach(function (layer, index) {
+          var label = "Layer " + (index + 1) + ": ";
+          if (!layer.id || layer.id.length > 60 || ids[layer.id]) errors.push(label + "id must be unique and no longer than 60 characters");
+          ids[layer.id] = true;
+          if (["routeCode", "prefix", "number", "literal"].indexOf(layer.source) < 0) errors.push(label + "source is invalid");
+          if (layer.source === "literal" && String(layer.text || "").length > 64) errors.push(label + "literal text is too long");
+          if (!/^#[0-9a-fA-F]{6}$/.test(layer.color || "")) errors.push(label + "color must use #RRGGBB");
+          if (!inRange(layer.fontSizeRem, 1, 128)) errors.push(label + "font size must be between 1 and 128");
+          if (!inRange(layer.offsetXRem, -256, 256) || !inRange(layer.offsetYRem, -256, 256)) errors.push(label + "offsets must be between -256 and 256");
+          if (!inRange(layer.scalePercent, 10, 400)) errors.push(label + "scale must be between 10 and 400");
+          if (!inRange(layer.rotationDegrees, -360, 360)) errors.push(label + "rotation must be between -360 and 360");
+        });
+        return errors;
+      }
+
+      function inRange(value, minimum, maximum) {
+        return Number.isFinite(Number(value)) && Number(value) >= minimum && Number(value) <= maximum;
+      }
+
+      function buildOutput() {
+        return {
+          schemaVersion: 1,
+          id: state.id,
+          name: state.name,
+          region: state.region,
+          system: state.system,
+          svg: state.svg,
+          widthRem: Number(state.widthRem),
+          heightRem: Number(state.heightRem),
+          textLayers: state.textLayers.map(function (layer) {
+            return {
+              id: layer.id,
+              source: layer.source,
+              text: layer.text || "",
+              color: String(layer.color || "").toUpperCase(),
+              fontSizeRem: Number(layer.fontSizeRem),
+              offsetXRem: Number(layer.offsetXRem),
+              offsetYRem: Number(layer.offsetYRem),
+              scalePercent: Number(layer.scalePercent),
+              rotationDegrees: Number(layer.rotationDegrees)
+            };
+          })
+        };
+      }
+
+      function updateOutputAndPreview() {
+        syncTopLevelFromForm();
+        jsonOutput.value = JSON.stringify(buildOutput(), null, 2);
+        var errors = validate();
+        if (errors.length) {
+          statusElement.className = "status error";
+          statusElement.textContent = errors[0] + (errors.length > 1 ? " (and " + (errors.length - 1) + " more)" : "");
+        } else {
+          statusElement.className = "status ok";
+          statusElement.textContent = "Definition is valid. Download it as " + jsonFilename() + ".";
+        }
+        renderPreview();
+        document.getElementById("downloadButton").disabled = errors.length > 0;
+      }
+
+      function renderPreview() {
+        if (!svgDataUrl) {
+          shieldCanvas.hidden = true;
+          emptyPreview.hidden = false;
+          return;
+        }
+
+        emptyPreview.hidden = true;
+        shieldCanvas.hidden = false;
+        var unit = Math.max(2, Math.min(10, numberValue(document.getElementById("previewScale").value, 6)));
+        var width = Math.max(8, Number(state.widthRem)) * unit;
+        var height = Math.max(8, Number(state.heightRem)) * unit;
+        var maximumWidth = document.getElementById("previewStage").clientWidth - 36;
+        var maximumHeight = document.getElementById("previewStage").clientHeight - 36;
+        var fit = Math.min(1, maximumWidth / width, maximumHeight / height);
+        shieldCanvas.style.width = width + "px";
+        shieldCanvas.style.height = height + "px";
+        shieldCanvas.style.transform = "scale(" + fit + ")";
+        shieldCanvas.innerHTML = '<img alt="" src="' + svgDataUrl + '">' + state.textLayers.map(function (layer) {
+          var text = resolveLayerText(layer, document.getElementById("sampleCode").value);
+          return '<div class="preview-layer" style="color:' + safeColor(layer.color) + ';font-size:' + (Number(layer.fontSizeRem) * unit) + 'px;transform:translate(' + (Number(layer.offsetXRem) * unit) + 'px,' + (Number(layer.offsetYRem) * unit) + 'px) scale(' + (Number(layer.scalePercent) / 100) + ') rotate(' + Number(layer.rotationDegrees) + 'deg)">' + escapeHtml(text) + '</div>';
+        }).join("");
+      }
+
+      function safeColor(value) {
+        return /^#[0-9a-fA-F]{6}$/.test(value || "") ? value : "#FFFFFF";
+      }
+
+      function parseRouteCode(value) {
+        var normalized = String(value || "1").replace(/\s+/g, "").toUpperCase() || "1";
+        var match = normalized.match(/^([A-Z]+)(-?)(.*)$/);
+        if (!match) return { normalized: normalized, prefix: "", number: normalized };
+        return {
+          normalized: normalized,
+          prefix: match[1] + (match[2] === "-" ? "-" : ""),
+          number: match[3] || normalized
+        };
+      }
+
+      function resolveLayerText(layer, routeCode) {
+        var parsed = parseRouteCode(routeCode);
+        if (layer.source === "routeCode") return parsed.normalized;
+        if (layer.source === "prefix") return parsed.prefix;
+        if (layer.source === "number") return parsed.number;
+        if (layer.source === "literal") return layer.text || "";
+        return "";
+      }
+
+      function jsonFilename() {
+        return String(state.svg || "RouteShield.svg").replace(/\.svg$/i, "") + ".json";
+      }
+
+      function loadJson(file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          try {
+            var parsed = JSON.parse(String(reader.result || ""));
+            if (!parsed || parsed.schemaVersion !== 1 || !Array.isArray(parsed.textLayers)) throw new Error("This is not a schema-version 1 shield definition.");
+            state = {
+              schemaVersion: 1,
+              id: parsed.id || "",
+              name: parsed.name || "",
+              region: parsed.region || "Custom",
+              system: parsed.system || "Custom",
+              svg: parsed.svg || file.name.replace(/\.json$/i, ".svg"),
+              widthRem: numberValue(parsed.widthRem, 34),
+              heightRem: numberValue(parsed.heightRem, 34),
+              textLayers: parsed.textLayers.slice(0, MAX_LAYERS).map(function (layer, index) {
+                var fallback = defaultLayer(index + 1);
+                return {
+                  id: layer.id || fallback.id,
+                  source: layer.source || fallback.source,
+                  text: layer.text || "",
+                  color: layer.color || fallback.color,
+                  fontSizeRem: numberValue(layer.fontSizeRem, fallback.fontSizeRem),
+                  offsetXRem: numberValue(layer.offsetXRem, 0),
+                  offsetYRem: numberValue(layer.offsetYRem, 0),
+                  scalePercent: numberValue(layer.scalePercent, 100),
+                  rotationDegrees: numberValue(layer.rotationDegrees, 0)
+                };
+              })
+            };
+            if (!state.textLayers.length) state.textLayers.push(defaultLayer(1));
+            syncFormFromState();
+            renderLayers();
+            updateOutputAndPreview();
+          } catch (error) {
+            statusElement.className = "status error";
+            statusElement.textContent = "Could not load JSON: " + error.message;
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      function loadSvg(file) {
+        if (file.size > 2 * 1024 * 1024) {
+          statusElement.className = "status error";
+          statusElement.textContent = "The SVG is larger than the mod's 2 MB limit.";
+          return;
+        }
+        var reader = new FileReader();
+        reader.onload = function () {
+          svgDataUrl = String(reader.result || "");
+          state.svg = file.name;
+          document.getElementById("svgName").value = file.name;
+          updateOutputAndPreview();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      document.querySelectorAll("[data-field]").forEach(function (input) {
+        input.addEventListener("input", updateOutputAndPreview);
+        input.addEventListener("change", updateOutputAndPreview);
+      });
+      document.getElementById("sampleCode").addEventListener("input", renderPreview);
+      document.getElementById("previewScale").addEventListener("input", renderPreview);
+      document.getElementById("loadJsonButton").addEventListener("click", function () { jsonFile.click(); });
+      document.getElementById("loadSvgButton").addEventListener("click", function () { svgFile.click(); });
+      jsonFile.addEventListener("change", function () { if (jsonFile.files[0]) loadJson(jsonFile.files[0]); jsonFile.value = ""; });
+      svgFile.addEventListener("change", function () { if (svgFile.files[0]) loadSvg(svgFile.files[0]); svgFile.value = ""; });
+
+      document.getElementById("addLayerButton").addEventListener("click", function () {
+        if (state.textLayers.length >= MAX_LAYERS) return;
+        state.textLayers.push(defaultLayer(state.textLayers.length + 1));
+        renderLayers();
+        updateOutputAndPreview();
+      });
+
+      document.getElementById("resetButton").addEventListener("click", function () {
+        state = {
+          schemaVersion: 1,
+          id: "",
+          name: "My Custom Shield",
+          region: "Custom",
+          system: "Custom",
+          svg: "MyShield.svg",
+          widthRem: 34,
+          heightRem: 34,
+          textLayers: [defaultLayer(1)]
+        };
+        svgDataUrl = "";
+        syncFormFromState();
+        renderLayers();
+        updateOutputAndPreview();
+      });
+
+      document.getElementById("downloadButton").addEventListener("click", function () {
+        if (validate().length) return;
+        var blob = new Blob([jsonOutput.value + "\n"], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = jsonFilename();
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
+
+      document.getElementById("copyButton").addEventListener("click", function () {
+        var text = jsonOutput.value;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(copySucceeded, copyFallback);
+        } else {
+          copyFallback();
+        }
+      });
+
+      function copySucceeded() {
+        statusElement.className = "status ok";
+        statusElement.textContent = "JSON copied to the clipboard.";
+      }
+
+      function copyFallback() {
+        jsonOutput.focus();
+        jsonOutput.select();
+        try {
+          document.execCommand("copy");
+          copySucceeded();
+        } catch (error) {
+          statusElement.className = "status error";
+          statusElement.textContent = "Clipboard access was blocked. Select the generated JSON and copy it manually.";
+        }
+      }
+
+      syncFormFromState();
+      renderLayers();
+      updateOutputAndPreview();
+    }());
+  </script>
+</body>
+</html>

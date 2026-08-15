@@ -7,6 +7,7 @@ namespace AdvancedRoadNaming.Domain
     public sealed class RouteOverlayGeometryGroup
     {
         public long RouteId;
+        public RoadRouteToolMode Mode;
         public bool Selected;
         public readonly List<Bezier4x3> Curves = new List<Bezier4x3>();
         public readonly List<float3> Nodes = new List<float3>();

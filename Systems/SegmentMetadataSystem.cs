@@ -18,7 +18,7 @@ namespace AdvancedRoadNaming.Systems
 {
     public sealed partial class SegmentMetadataSystem : GameSystemBase, IDefaultSerializable
     {
-        private const int SaveVersion = 6;
+        private const int SaveVersion = 9;
         private const int AggregateStabilityInitialDelayTicks = 2;
         private const int AggregateStabilityRetryDelayTicks = 10;
         private const int AggregateStabilityStableChecksRequired = 3;
@@ -43,10 +43,11 @@ namespace AdvancedRoadNaming.Systems
         private EntityQuery _modifiedAggregateQuery;
         private readonly List<AggregateSplitStabilityCheck> _aggregateStabilityChecks = new List<AggregateSplitStabilityCheck>();
         private readonly List<ProtectedModAggregateGroup> _protectedModAggregateGroups = new List<ProtectedModAggregateGroup>();
-        private readonly HashSet<int> _pendingProtectedModAggregateValidation = new HashSet<int>();
         private readonly HashSet<Entity> _loggedExpandedAggregateMembership = new HashSet<Entity>();
         private EntityQuery _managedAggregateQuery;
         private int _nextProtectedModAggregateGroupId = 1;
+        private int _aggregateProtectionRevision = 1;
+        private int _rebuiltAggregateProtectionRevision = -1;
         private bool _pendingPostLoadNameReapply;
         private int _pendingPostLoadNameReapplyDelayTicks;
         private int _pendingPostLoadNameReapplyAttempts;
@@ -72,6 +73,8 @@ namespace AdvancedRoadNaming.Systems
         public RouteDatabaseService RouteDatabase => _routeDatabase;
 
         public SegmentValidationService Validation => _validation;
+
+        internal int AggregateProtectionRevision => _aggregateProtectionRevision;
 
         public RoadNetworkPathingService Pathing { get; private set; }
 
@@ -107,7 +110,8 @@ namespace AdvancedRoadNaming.Systems
         
         protected override void OnUpdate()
         {
-            // Live work runs only through RoadNamePersistenceSystem at ModificationEnd.
+            // Live work runs only through RoadNamePersistenceSystem after EndFrameBarrier is
+            // opened in MainLoop; NameSystem cannot create its command buffer in ModificationEnd.
         }
 
         // Vanilla remains authoritative for aggregate membership. Runtime persistence only
@@ -511,11 +515,10 @@ namespace AdvancedRoadNaming.Systems
             public int StableChecks;
         }
 
-        private sealed class ProtectedModAggregateGroup
+        internal sealed class ProtectedModAggregateGroup
         {
             public int Id;
             public long RouteId;
-            public Entity IntendedAggregate;
             public Entity IntendedPrefab;
             public string IntendedName;
             public readonly List<Entity> RouteEdges = new List<Entity>();
@@ -1121,6 +1124,7 @@ namespace AdvancedRoadNaming.Systems
 
         private void ApplyModAggregateMaintenance(IReadOnlyList<Entity> selectedSegments, string operation)
         {
+            InvalidateProtectedAggregateRegistry(operation);
             if (!IsModAggregateProtectionEnabled())
                 return;
 
@@ -1346,88 +1350,40 @@ namespace AdvancedRoadNaming.Systems
             return ok;
         }
 
-        private void RegisterProtectedModAggregateGroups(long routeId, IReadOnlyList<Entity> selectedSegments, HashSet<Entity> coveredSegments)
-        {
-            if (!IsModAggregateProtectionEnabled() || selectedSegments == null || selectedSegments.Count == 0)
-                return;
-
-            var groups = BuildContiguousCompatibleAggregateGroups(selectedSegments);
-            var registered = 0;
-            for (var i = 0; i < groups.Count; i++)
-            {
-                var group = groups[i];
-                if (group.Segments.Count == 0)
-                    continue;
-
-                var aggregate = GetAuthoritativeNameEntity(group.Segments[0]);
-                if (!IsValidRoadAggregateOwner(aggregate) || !OwnerHasExpectedPrefab(aggregate, group.Prefab))
-                    continue;
-
-                var protectedGroup = new ProtectedModAggregateGroup
-                {
-                    Id = _nextProtectedModAggregateGroupId++,
-                    RouteId = routeId,
-                    IntendedAggregate = aggregate,
-                    IntendedPrefab = group.Prefab,
-                    IntendedName = group.FinalName
-                };
-                AddSegments(protectedGroup.RouteEdges, group.Segments);
-                _protectedModAggregateGroups.Add(protectedGroup);
-                _pendingProtectedModAggregateValidation.Add(protectedGroup.Id);
-                if (coveredSegments != null)
-                {
-                    for (var edgeIndex = 0; edgeIndex < group.Segments.Count; edgeIndex++)
-                        coveredSegments.Add(group.Segments[edgeIndex]);
-                }
-                registered++;
-            }
-
-            Mod.log.Info(() => $"Road Naming: protected mod aggregate groups registered. RouteId={routeId}, Groups={registered}, SourceSegments={selectedSegments.Count}.");
-        }
-
         private void RebuildProtectedModAggregateGroupsFromModState()
         {
             _protectedModAggregateGroups.Clear();
-            _pendingProtectedModAggregateValidation.Clear();
             _nextProtectedModAggregateGroupId = 1;
 
             if (!IsModAggregateProtectionEnabled())
                 return;
 
             var routeCount = 0;
-            var coveredSegments = new HashSet<Entity>();
+            var routeBySegment = new Dictionary<Entity, long>();
             foreach (var route in _routeDatabase.Routes)
             {
-                if (route == null || route.IsDeleted)
+                if (route == null || route.IsDeleted || !IsSavedRouteRecordActive(route))
                     continue;
 
-                var segments = FilterValidRouteSegments(route.OrderedSegmentIds);
-                if (segments.Count == 0)
-                    continue;
-
-                RegisterProtectedModAggregateGroups(route.RouteId, segments, coveredSegments);
                 routeCount++;
+                for (var i = 0; i < route.OrderedSegmentIds.Count; i++)
+                {
+                    var segment = route.OrderedSegmentIds[i];
+                    if (_validation.IsValidRoadSegment(segment))
+                        routeBySegment[segment] = route.RouteId;
+                }
             }
 
-            RegisterProtectedMetadataAggregateGroups(coveredSegments);
-            Mod.log.Info(() => $"Road Naming: protected mod aggregate groups rebuilt. SavedRoutes={routeCount}, MetadataRecords={_repository.Count}, Groups={_protectedModAggregateGroups.Count}.");
-        }
-
-        private void RegisterProtectedMetadataAggregateGroups(HashSet<Entity> coveredSegments)
-        {
             var candidates = new HashSet<Entity>();
             foreach (var metadata in _repository.All)
             {
-                if (metadata == null || !_validation.IsValidRoadSegment(metadata.SegmentEntity))
-                    continue;
-
-                if (coveredSegments != null && coveredSegments.Contains(metadata.SegmentEntity))
-                    continue;
-
-                if (!TryGetAggregatePrefabForSegment(metadata.SegmentEntity, out _) || !TryResolveFinalNameForSegment(metadata.SegmentEntity, out _))
-                    continue;
-
-                candidates.Add(metadata.SegmentEntity);
+                if (metadata != null
+                    && _validation.IsValidRoadSegment(metadata.SegmentEntity)
+                    && TryGetAggregatePrefabFromRoadSegment(metadata.SegmentEntity, out _)
+                    && TryResolveFinalNameForSegment(metadata.SegmentEntity, out _))
+                {
+                    candidates.Add(metadata.SegmentEntity);
+                }
             }
 
             while (candidates.Count > 0)
@@ -1436,18 +1392,24 @@ namespace AdvancedRoadNaming.Systems
                 if (seed == Entity.Null)
                     break;
 
-                if (!TryGetAggregatePrefabForSegment(seed, out var prefab) || !TryResolveFinalNameForSegment(seed, out var finalName))
+                if (!TryGetAggregatePrefabFromRoadSegment(seed, out var prefab) || !TryResolveFinalNameForSegment(seed, out var finalName))
                 {
                     candidates.Remove(seed);
                     continue;
                 }
 
                 var component = ExtractCompatibleMetadataComponent(seed, candidates, prefab, finalName);
-                if (component.Count == 0)
-                    continue;
-
-                RegisterProtectedComponentGroup(0, component, prefab, finalName, coveredSegments);
+                var routeId = 0L;
+                for (var i = 0; i < component.Count; i++)
+                {
+                    if (routeBySegment.TryGetValue(component[i], out routeId))
+                        break;
+                }
+                RegisterProtectedComponentGroup(routeId, component, prefab, finalName, null);
             }
+
+            _rebuiltAggregateProtectionRevision = _aggregateProtectionRevision;
+            Mod.log.Info(() => $"Road Naming: protected mod aggregate groups rebuilt. SavedRoutes={routeCount}, MetadataRecords={_repository.Count}, Groups={_protectedModAggregateGroups.Count}.");
         }
 
         private void RegisterProtectedComponentGroup(long routeId, IReadOnlyList<Entity> component, Entity prefab, string finalName, HashSet<Entity> coveredSegments)
@@ -1455,27 +1417,133 @@ namespace AdvancedRoadNaming.Systems
             if (component == null || component.Count == 0 || prefab == Entity.Null || string.IsNullOrWhiteSpace(finalName))
                 return;
 
-            var aggregate = FindCompatibleAggregateOwner(component, prefab);
-            if (!IsValidRoadAggregateOwner(aggregate) || !OwnerHasExpectedPrefab(aggregate, prefab))
-                return;
-
             var protectedGroup = new ProtectedModAggregateGroup
             {
                 Id = _nextProtectedModAggregateGroupId++,
                 RouteId = routeId,
-                IntendedAggregate = aggregate,
                 IntendedPrefab = prefab,
                 IntendedName = finalName.Trim()
             };
             AddSegments(protectedGroup.RouteEdges, component);
             _protectedModAggregateGroups.Add(protectedGroup);
-            _pendingProtectedModAggregateValidation.Add(protectedGroup.Id);
 
             if (coveredSegments != null)
             {
                 for (var i = 0; i < component.Count; i++)
                     coveredSegments.Add(component[i]);
             }
+        }
+
+        internal IReadOnlyList<ProtectedModAggregateGroup> GetProtectedAggregateGroups()
+        {
+            if (_rebuiltAggregateProtectionRevision != _aggregateProtectionRevision)
+                RebuildProtectedModAggregateGroupsFromModState();
+            return _protectedModAggregateGroups;
+        }
+
+        internal void InvalidateProtectedAggregateRegistry(string source)
+        {
+            unchecked
+            {
+                _aggregateProtectionRevision++;
+                if (_aggregateProtectionRevision <= 0)
+                    _aggregateProtectionRevision = 1;
+            }
+            _rebuiltAggregateProtectionRevision = -1;
+            if (Mod.IsVerboseLoggingEnabled)
+                Mod.log.Info(() => $"Road Naming: protected aggregate registry invalidated. Source={source}, Revision={_aggregateProtectionRevision}.");
+        }
+
+        internal bool MigrateProtectedRoadReplacement(Entity original, Entity replacement)
+        {
+            if (original == Entity.Null
+                || replacement == Entity.Null
+                || original == replacement
+                || !_validation.IsValidRoadSegment(replacement))
+            {
+                return false;
+            }
+
+            var changed = false;
+            if (_repository.TryGet(original, out var sourceMetadata))
+            {
+                var targetMetadata = _repository.GetOrCreate(replacement);
+                if (string.IsNullOrWhiteSpace(targetMetadata.BaseNameSnapshot))
+                    targetMetadata.BaseNameSnapshot = sourceMetadata.BaseNameSnapshot;
+                if (!string.IsNullOrWhiteSpace(sourceMetadata.OptionalCustomRoadName))
+                    targetMetadata.OptionalCustomRoadName = sourceMetadata.OptionalCustomRoadName;
+                for (var i = 0; i < sourceMetadata.RouteNumbers.Count; i++)
+                {
+                    var routeNumber = sourceMetadata.RouteNumbers[i];
+                    if (!targetMetadata.RouteNumbers.Contains(routeNumber))
+                        targetMetadata.RouteNumbers.Add(routeNumber);
+                }
+                targetMetadata.RouteNumberPlacement = sourceMetadata.RouteNumberPlacement;
+                targetMetadata.Flags |= sourceMetadata.Flags;
+                targetMetadata.Touch();
+                _repository.Remove(original);
+                changed = true;
+            }
+
+            foreach (var route in _routeDatabase.Routes)
+            {
+                if (route == null || route.IsDeleted)
+                    continue;
+
+                var routeChanged = false;
+                for (var i = route.OrderedSegmentIds.Count - 1; i >= 0; i--)
+                {
+                    if (route.OrderedSegmentIds[i] != original)
+                        continue;
+
+                    var replacementAlreadyStored = route.OrderedSegmentIds.Contains(replacement);
+                    if (replacementAlreadyStored)
+                    {
+                        route.OrderedSegmentIds.RemoveAt(i);
+                        if (i < route.OriginalStreetNamesSnapshot.Count)
+                            route.OriginalStreetNamesSnapshot.RemoveAt(i);
+                    }
+                    else
+                    {
+                        route.OrderedSegmentIds[i] = replacement;
+                    }
+                    routeChanged = true;
+                }
+
+                for (var i = 0; i < route.Waypoints.Count; i++)
+                {
+                    var waypoint = route.Waypoints[i];
+                    if (waypoint.Segment != original)
+                        continue;
+                    route.Waypoints[i] = new RoadRouteWaypoint(replacement, waypoint.Position, waypoint.CurvePosition);
+                    routeChanged = true;
+                }
+
+                if (route.StartAnchorSegment == original)
+                {
+                    route.StartAnchorSegment = replacement;
+                    routeChanged = true;
+                }
+                if (route.EndAnchorSegment == original)
+                {
+                    route.EndAnchorSegment = replacement;
+                    routeChanged = true;
+                }
+
+                if (routeChanged)
+                {
+                    route.LastKnownResolvedSegmentCount = FilterValidRouteSegments(route.OrderedSegmentIds).Count;
+                    route.UpdatedAtUtcTicks = System.DateTime.UtcNow.Ticks;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                InvalidateProtectedAggregateRegistry("VerifiedRoadReplacement");
+                Mod.log.Info(() => $"Road Naming: migrated protected road replacement. Original={original.Index}, Replacement={replacement.Index}.");
+            }
+            return changed;
         }
 
         private List<Entity> ExtractCompatibleMetadataComponent(Entity seed, HashSet<Entity> candidates, Entity prefab, string finalName)
@@ -1510,7 +1578,7 @@ namespace AdvancedRoadNaming.Systems
                 if (!candidates.Contains(neighbor))
                     continue;
 
-                if (!TryGetAggregatePrefabForSegment(neighbor, out var neighborPrefab) || neighborPrefab != prefab)
+                if (!TryGetAggregatePrefabFromRoadSegment(neighbor, out var neighborPrefab) || neighborPrefab != prefab)
                     continue;
 
                 if (!TryResolveFinalNameForSegment(neighbor, out var neighborName) || !string.Equals(neighborName, finalName, System.StringComparison.Ordinal))
@@ -1527,298 +1595,6 @@ namespace AdvancedRoadNaming.Systems
                 return entity;
 
             return Entity.Null;
-        }
-
-        private bool TrimProtectedGroupForDirectEdits(ProtectedModAggregateGroup group)
-        {
-            for (var i = group.RouteEdges.Count - 1; i >= 0; i--)
-            {
-                var edge = group.RouteEdges[i];
-                if (!_validation.IsValidRoadSegment(edge) || !EdgeHasExpectedPrefab(edge, group.IntendedPrefab))
-                {
-                    group.RouteEdges.RemoveAt(i);
-                    continue;
-                }
-            }
-
-            if (group.RouteEdges.Count == 0)
-                return false;
-
-            if (!IsValidRoadAggregateOwner(group.IntendedAggregate) || !OwnerHasExpectedPrefab(group.IntendedAggregate, group.IntendedPrefab))
-                group.IntendedAggregate = GetAuthoritativeNameEntity(group.RouteEdges[0]);
-
-            return IsValidRoadAggregateOwner(group.IntendedAggregate) && OwnerHasExpectedPrefab(group.IntendedAggregate, group.IntendedPrefab);
-        }
-
-        private bool ProtectGroupDirtyStateBeforeAggregateSystem(ProtectedModAggregateGroup group)
-        {
-            var touched = false;
-            var groupSet = new HashSet<Entity>(group.RouteEdges);
-
-            if (RemoveUpdatedTag(group.IntendedAggregate))
-                touched = true;
-
-            for (var i = 0; i < group.RouteEdges.Count; i++)
-            {
-                var edge = group.RouteEdges[i];
-                if (RemoveUpdatedTag(edge))
-                    touched = true;
-
-                var currentOwner = GetAuthoritativeNameEntity(edge);
-                if (currentOwner != group.IntendedAggregate)
-                    touched = true;
-
-                if (HasUpdatedNeighborOutsideProtectedGroup(edge, groupSet))
-                    touched = true;
-            }
-
-            var ownerEdges = GetAggregateRoadEdges(group.IntendedAggregate);
-            if (!ListsContainSameEntities(ownerEdges, group.RouteEdges))
-                touched = true;
-
-            if (touched)
-                Mod.log.Info(() => $"Road Naming: protected aggregate pre-vanilla guard touched group. GroupId={group.Id}, RouteId={group.RouteId}, Aggregate={group.IntendedAggregate.Index}, Edges={group.RouteEdges.Count}.");
-
-            return touched;
-        }
-
-        private bool HasUpdatedNeighborOutsideProtectedGroup(Entity edge, HashSet<Entity> protectedSet)
-        {
-            if (!_validation.IsValidRoadSegment(edge))
-                return false;
-
-            var edgeData = EntityManager.GetComponentData<Edge>(edge);
-            return HasUpdatedNeighborOutsideProtectedGroupFromNode(edgeData.m_Start, protectedSet)
-                || HasUpdatedNeighborOutsideProtectedGroupFromNode(edgeData.m_End, protectedSet);
-        }
-
-        private bool HasUpdatedNeighborOutsideProtectedGroupFromNode(Entity node, HashSet<Entity> protectedSet)
-        {
-            if (node == Entity.Null || !EntityManager.Exists(node) || !EntityManager.HasBuffer<ConnectedEdge>(node))
-                return false;
-
-            var connected = EntityManager.GetBuffer<ConnectedEdge>(node, true);
-            for (var i = 0; i < connected.Length; i++)
-            {
-                var neighbor = connected[i].m_Edge;
-                if (protectedSet.Contains(neighbor) || !_validation.IsValidRoadSegment(neighbor))
-                    continue;
-
-                if (EntityManager.HasComponent<Updated>(neighbor))
-                    return true;
-
-                var owner = GetAuthoritativeNameEntity(neighbor);
-                if (owner != Entity.Null && EntityManager.Exists(owner) && EntityManager.HasComponent<Updated>(owner))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private void ValidatePendingProtectedModAggregates()
-        {
-            if (!IsModAggregateProtectionEnabled() || _pendingProtectedModAggregateValidation.Count == 0)
-                return;
-
-            var pending = new HashSet<int>(_pendingProtectedModAggregateValidation);
-            _pendingProtectedModAggregateValidation.Clear();
-
-            var repaired = 0;
-            for (var i = _protectedModAggregateGroups.Count - 1; i >= 0; i--)
-            {
-                var group = _protectedModAggregateGroups[i];
-                if (!pending.Contains(group.Id))
-                    continue;
-
-                if (!TrimProtectedGroupForDirectEdits(group))
-                {
-                    _protectedModAggregateGroups.RemoveAt(i);
-                    continue;
-                }
-
-                if (!EnsureProtectedGroupIsSingleComponent(i))
-                    continue;
-
-                if (ValidateProtectedModAggregateGroup(group))
-                    continue;
-
-                if (RepairProtectedModAggregateGroup(group))
-                    repaired++;
-            }
-
-            if (repaired > 0)
-                Mod.log.Info(() => $"Road Naming: protected mod aggregate validation repaired {repaired} touched group(s).");
-        }
-
-        private bool EnsureProtectedGroupIsSingleComponent(int groupIndex)
-        {
-            var group = _protectedModAggregateGroups[groupIndex];
-            var components = BuildConnectedEdgeComponents(group.RouteEdges);
-            if (components.Count <= 1)
-                return components.Count == 1;
-
-            _protectedModAggregateGroups.RemoveAt(groupIndex);
-            for (var i = 0; i < components.Count; i++)
-            {
-                var component = components[i];
-                if (component.Count == 0)
-                    continue;
-
-                var aggregate = FindCompatibleAggregateOwner(component, group.IntendedPrefab);
-                if (!IsValidRoadAggregateOwner(aggregate))
-                    continue;
-
-                var splitGroup = new ProtectedModAggregateGroup
-                {
-                    Id = _nextProtectedModAggregateGroupId++,
-                    RouteId = group.RouteId,
-                    IntendedAggregate = aggregate,
-                    IntendedPrefab = group.IntendedPrefab,
-                    IntendedName = group.IntendedName
-                };
-                AddSegments(splitGroup.RouteEdges, component);
-                _protectedModAggregateGroups.Add(splitGroup);
-                _pendingProtectedModAggregateValidation.Add(splitGroup.Id);
-            }
-
-            Mod.log.Info(() => $"Road Naming: protected mod aggregate group split after direct edit. GroupId={group.Id}, RouteId={group.RouteId}, Components={components.Count}.");
-            return false;
-        }
-
-        private bool ValidateProtectedModAggregateGroup(ProtectedModAggregateGroup group)
-        {
-            if (!IsValidRoadAggregateOwner(group.IntendedAggregate) || !OwnerHasExpectedPrefab(group.IntendedAggregate, group.IntendedPrefab))
-                return false;
-
-            var ownerEdges = GetAggregateRoadEdges(group.IntendedAggregate);
-            if (!ListsContainSameEntities(ownerEdges, group.RouteEdges))
-                return false;
-
-            for (var i = 0; i < group.RouteEdges.Count; i++)
-            {
-                var edge = group.RouteEdges[i];
-                if (GetAuthoritativeNameEntity(edge) != group.IntendedAggregate || !EdgeHasExpectedPrefab(edge, group.IntendedPrefab))
-                    return false;
-            }
-
-            var currentName = GetCurrentAuthoritativeName(group.IntendedAggregate, string.Empty);
-            return string.Equals(currentName, group.IntendedName ?? string.Empty, System.StringComparison.Ordinal);
-        }
-
-        private bool RepairProtectedModAggregateGroup(ProtectedModAggregateGroup group)
-        {
-            var components = BuildConnectedEdgeComponents(group.RouteEdges);
-            if (components.Count != 1)
-            {
-                Mod.log.Warn(() => $"Road Naming: protected aggregate repair skipped non-contiguous group. GroupId={group.Id}, RouteId={group.RouteId}, Components={components.Count}, Edges={group.RouteEdges.Count}.");
-                return false;
-            }
-
-            if (!IsValidRoadAggregateOwner(group.IntendedAggregate) || !OwnerHasExpectedPrefab(group.IntendedAggregate, group.IntendedPrefab))
-                group.IntendedAggregate = FindCompatibleAggregateOwner(group.RouteEdges, group.IntendedPrefab);
-
-            if (!IsValidRoadAggregateOwner(group.IntendedAggregate) || !OwnerHasExpectedPrefab(group.IntendedAggregate, group.IntendedPrefab))
-            {
-                Mod.log.Warn(() => $"Road Naming: protected aggregate repair skipped because no compatible aggregate owner remains. GroupId={group.Id}, RouteId={group.RouteId}, Edges={group.RouteEdges.Count}.");
-                return false;
-            }
-
-            var protectedEdges = new HashSet<Entity>(group.RouteEdges);
-            var displacedOwners = new HashSet<Entity>();
-            for (var i = 0; i < group.RouteEdges.Count; i++)
-            {
-                var currentOwner = GetAuthoritativeNameEntity(group.RouteEdges[i]);
-                if (currentOwner != Entity.Null && currentOwner != group.IntendedAggregate && EntityManager.Exists(currentOwner))
-                    displacedOwners.Add(currentOwner);
-            }
-
-            AssignAggregateEdges(group.IntendedAggregate, group.RouteEdges, "ProtectedModAggregateRepair", "Protected");
-            foreach (var displacedOwner in displacedOwners)
-                RemoveEdgesFromAggregateBuffer(displacedOwner, protectedEdges);
-
-            SetAuthoritativeName(group.IntendedAggregate, group.IntendedName, "ProtectedModAggregateRepair", "ProtectedAggregate", group.RouteEdges.Count, group.RouteEdges.Count);
-            RemoveUpdatedTag(group.IntendedAggregate);
-            for (var i = 0; i < group.RouteEdges.Count; i++)
-                RemoveUpdatedTag(group.RouteEdges[i]);
-            return true;
-        }
-
-        private Entity FindCompatibleAggregateOwner(IReadOnlyList<Entity> routeEdges, Entity prefab)
-        {
-            if (routeEdges == null)
-                return Entity.Null;
-
-            for (var i = 0; i < routeEdges.Count; i++)
-            {
-                var owner = GetAuthoritativeNameEntity(routeEdges[i]);
-                if (IsValidRoadAggregateOwner(owner) && OwnerHasExpectedPrefab(owner, prefab))
-                    return owner;
-            }
-
-            return Entity.Null;
-        }
-
-        private bool EdgeHasExpectedPrefab(Entity edge, Entity expectedPrefab)
-        {
-            if (expectedPrefab == Entity.Null || edge == Entity.Null || !EntityManager.Exists(edge))
-                return false;
-
-            var owner = GetAuthoritativeNameEntity(edge);
-            if (IsValidRoadAggregateOwner(owner) && OwnerHasExpectedPrefab(owner, expectedPrefab))
-                return true;
-
-            if (!EntityManager.HasComponent<PrefabRef>(edge))
-                return false;
-
-            return EntityManager.GetComponentData<PrefabRef>(edge).m_Prefab == expectedPrefab;
-        }
-
-        private void RemoveEdgesFromAggregateBuffer(Entity aggregate, HashSet<Entity> edges)
-        {
-            if (aggregate == Entity.Null || edges == null || edges.Count == 0 || !EntityManager.Exists(aggregate) || !EntityManager.HasBuffer<AggregateElement>(aggregate))
-                return;
-
-            var buffer = EntityManager.GetBuffer<AggregateElement>(aggregate);
-            var removed = false;
-            for (var i = buffer.Length - 1; i >= 0; i--)
-            {
-                if (!edges.Contains(buffer[i].m_Edge))
-                    continue;
-
-                buffer.RemoveAt(i);
-                removed = true;
-            }
-
-            if (!removed)
-                return;
-
-            InvalidateAggregateLabelState(aggregate);
-            if (!EntityManager.HasComponent<BatchesUpdated>(aggregate))
-                EntityManager.AddComponent<BatchesUpdated>(aggregate);
-        }
-
-        private bool RemoveUpdatedTag(Entity entity)
-        {
-            if (entity == Entity.Null || !EntityManager.Exists(entity) || !EntityManager.HasComponent<Updated>(entity))
-                return false;
-
-            EntityManager.RemoveComponent<Updated>(entity);
-            return true;
-        }
-
-        private static bool ListsContainSameEntities(IReadOnlyList<Entity> left, IReadOnlyList<Entity> right)
-        {
-            if (left == null || right == null || left.Count != right.Count)
-                return false;
-
-            var set = new HashSet<Entity>(left);
-            for (var i = 0; i < right.Count; i++)
-            {
-                if (!set.Contains(right[i]))
-                    return false;
-            }
-
-            return true;
         }
 
         // Writes the final visible name onto the real owner entity and tags bits for refresh,
@@ -1899,15 +1675,16 @@ namespace AdvancedRoadNaming.Systems
         }
         // Saves the current applied route intent into the route database,
         // including waypoints, ordered segments and some display metadata for the UI.
-        public SavedRouteRecord SaveAppliedRoute(IReadOnlyList<Entity> selectedSegments, IReadOnlyList<RoadRouteWaypoint> waypoints, RoadRouteToolMode mode, string inputValue, RouteNumberPlacement placement)
+        public SavedRouteRecord SaveAppliedRoute(IReadOnlyList<Entity> selectedSegments, IReadOnlyList<RoadRouteWaypoint> waypoints, RoadRouteToolMode mode, string inputValue, RouteNumberPlacement placement, RouteShieldStyle shieldStyle, string shieldImportId)
         {
             var segmentList = FilterValidRouteSegments(selectedSegments);
             var streetNames = BuildStreetNameSnapshot(segmentList);
             var metadata = BuildRouteCorridorMetadata(segmentList, streetNames);
             var title = BuildRouteRecordTitle(mode, inputValue, metadata);
-            var route = _routeDatabase.CreateRoute(title, mode, inputValue, placement, waypoints, segmentList, streetNames);
+            var route = _routeDatabase.CreateRoute(title, mode, inputValue, placement, shieldStyle, shieldImportId, waypoints, segmentList, streetNames);
             ApplyRouteCorridorMetadata(route, metadata);
-            Mod.log.Info(() => $"Road Naming: route saved. RouteId={route.RouteId}, Title='{route.DisplayTitle}', Mode={route.Mode}, Input='{route.BaseInputValue}', Segments={route.SegmentCount}, Waypoints={route.WaypointCount}, Corridor='{route.DerivedDisplayCorridor}', Streets='{BuildStreetSummary(route)}'.");
+            InvalidateProtectedAggregateRegistry("SaveAppliedRoute");
+            Mod.log.Info(() => $"Road Naming: route saved. RouteId={route.RouteId}, Title='{route.DisplayTitle}', Mode={route.Mode}, Input='{route.BaseInputValue}', ShieldStyle={route.RouteShieldStyle}, Segments={route.SegmentCount}, Waypoints={route.WaypointCount}, Corridor='{route.DerivedDisplayCorridor}', Streets='{BuildStreetSummary(route)}'.");
             return route;
         }
 
@@ -1962,6 +1739,8 @@ namespace AdvancedRoadNaming.Systems
                 RouteMode = route.Mode,
                 InputValue = route.BaseInputValue ?? string.Empty,
                 RouteNumberPlacement = route.RouteNumberPlacement,
+                RouteShieldStyle = route.RouteShieldStyle,
+                RouteShieldImportId = route.RouteShieldImportId,
                 Message = BuildRebuildReviewMessage(route, candidateSegments),
                 IsDirty = false
             };
@@ -1983,6 +1762,13 @@ namespace AdvancedRoadNaming.Systems
                 return false;
             }
 
+            var invalidWaypointCount = CountInvalidRouteWaypointAnchors(route);
+            if (invalidWaypointCount > 0)
+            {
+                message = $"Saved route '{BuildRouteDisplayTitle(route)}' has {invalidWaypointCount} missing waypoint anchor(s). Clean up the route before manipulating it.";
+                return false;
+            }
+
             var candidateSegments = FilterValidRouteSegments(route.OrderedSegmentIds);
             if (candidateSegments.Count == 0 && !TryBuildRouteCandidate(route, out candidateSegments, out _))
             {
@@ -1997,6 +1783,8 @@ namespace AdvancedRoadNaming.Systems
                 RouteMode = route.Mode,
                 InputValue = route.BaseInputValue ?? string.Empty,
                 RouteNumberPlacement = route.RouteNumberPlacement,
+                RouteShieldStyle = route.RouteShieldStyle,
+                RouteShieldImportId = route.RouteShieldImportId,
                 Message = $"Modify mode active for '{BuildRouteDisplayTitle(route)}'. Drag existing waypoints or the route line to edit, then commit or cancel.",
                 IsDirty = false
             };
@@ -2009,6 +1797,77 @@ namespace AdvancedRoadNaming.Systems
             return true;
         }
 
+        public int CountInvalidRouteWaypointAnchors(SavedRouteRecord route)
+        {
+            if (route == null || route.Waypoints == null)
+                return 0;
+
+            var invalid = 0;
+            for (var i = 0; i < route.Waypoints.Count; i++)
+            {
+                if (!_validation.IsValidRoadSegment(route.Waypoints[i].Segment))
+                    invalid++;
+            }
+
+            return invalid;
+        }
+
+        public bool CleanupSavedRouteOrphanWaypoints(long routeId, out int removedWaypoints, out int remainingWaypoints, out string message)
+        {
+            removedWaypoints = 0;
+            remainingWaypoints = 0;
+
+            if (!_routeDatabase.TryGet(routeId, out var route))
+            {
+                message = $"Saved route {routeId} was not found.";
+                return false;
+            }
+
+            var cleanedWaypoints = new List<RoadRouteWaypoint>();
+            for (var i = 0; i < route.Waypoints.Count; i++)
+            {
+                var waypoint = route.Waypoints[i];
+                if (_validation.IsValidRoadSegment(waypoint.Segment))
+                    cleanedWaypoints.Add(waypoint);
+                else
+                    removedWaypoints++;
+            }
+
+            remainingWaypoints = cleanedWaypoints.Count;
+            if (removedWaypoints == 0)
+            {
+                message = $"Saved route '{BuildRouteDisplayTitle(route)}' has no missing waypoint anchors to clean up.";
+                return true;
+            }
+
+            var cleanedSegments = new List<Entity>();
+            if (!TryBuildRouteSegmentsFromWaypoints(cleanedWaypoints, cleanedSegments, out var buildMessage))
+            {
+                Mod.log.Warn(() => $"Road Naming: waypoint cleanup could not rebuild route path. RouteId={routeId}, Message='{buildMessage}'.");
+                cleanedSegments.Clear();
+            }
+
+            if (cleanedSegments.Count == 0)
+                cleanedSegments = FilterValidRouteSegments(route.OrderedSegmentIds);
+
+            var streetNames = BuildStreetNameSnapshot(cleanedSegments);
+            _routeDatabase.ReplaceRouteIntent(route, route.RouteNumberPlacement, cleanedWaypoints, cleanedSegments, streetNames);
+            ApplyRouteCorridorMetadata(route, BuildRouteCorridorMetadata(cleanedSegments, streetNames));
+            if (!route.IsUserDefinedTitle)
+                route.DisplayTitle = BuildRouteRecordTitle(route.Mode, route.BaseInputValue, BuildRouteCorridorMetadata(cleanedSegments, streetNames));
+
+            route.UpdatedAtUtcTicks = System.DateTime.UtcNow.Ticks;
+            message = remainingWaypoints >= 2
+                ? $"Cleaned up {removedWaypoints} missing waypoint anchor(s) from '{BuildRouteDisplayTitle(route)}'."
+                : $"Cleaned up {removedWaypoints} missing waypoint anchor(s), but '{BuildRouteDisplayTitle(route)}' no longer has enough waypoints to manipulate.";
+            var removedWaypointCount = removedWaypoints;
+            var remainingWaypointCount = remainingWaypoints;
+            var cleanedSegmentCount = cleanedSegments.Count;
+            InvalidateProtectedAggregateRegistry("CleanupSavedRouteWaypoints");
+            Mod.log.Info(() => $"Road Naming: orphan waypoint cleanup complete. RouteId={routeId}, Removed={removedWaypointCount}, Remaining={remainingWaypointCount}, Segments={cleanedSegmentCount}.");
+            return true;
+        }
+
         // This is the safe commit pipeline for saved routes:
         // clear affected segments back to base state, replay overlapping routes, then apply the final reviewed route.
         public bool CommitSavedRouteReview(long routeId, IReadOnlyList<RoadRouteWaypoint> finalWaypoints, IReadOnlyList<Entity> finalSegments, RouteNumberPlacement placement, out string message)
@@ -2016,6 +1875,12 @@ namespace AdvancedRoadNaming.Systems
             if (!_routeDatabase.TryGet(routeId, out var route))
             {
                 message = $"Saved route {routeId} was not found.";
+                return false;
+            }
+
+            if (route.Mode == RoadRouteToolMode.RenameSelectedSegments && string.IsNullOrWhiteSpace(route.BaseInputValue))
+            {
+                message = $"Saved rename route '{route.DisplayTitle}' needs a non-empty road name before it can be reapplied.";
                 return false;
             }
 
@@ -2035,6 +1900,7 @@ namespace AdvancedRoadNaming.Systems
 
             var affectedSegments = BuildAffectedRouteMutationSet(route, normalizedFinalSegments);
             var fallbackBaseNames = BuildBaseNameFallbackMap(route, affectedSegments);
+            var dormantRenameNames = CaptureDormantRenameNames(affectedSegments, route.Mode == RoadRouteToolMode.AssignMajorRouteNumber);
             ResetSegmentsToBaseMetadata(new List<Entity>(affectedSegments), fallbackBaseNames, route);
 
             var remainingRoutes = GetReplayOrderedRoutesExcept(affectedSegments, route.RouteId);
@@ -2048,6 +1914,7 @@ namespace AdvancedRoadNaming.Systems
                 route.DisplayTitle = BuildRouteRecordTitle(route.Mode, route.BaseInputValue, BuildRouteCorridorMetadata(normalizedFinalSegments, streetNames));
 
             ReplaySavedRouteContribution(route, new HashSet<Entity>(normalizedFinalSegments));
+            RestoreDormantRenameNames(dormantRenameNames);
 
             var refreshSegments = new List<Entity>(affectedSegments);
             for (var i = 0; i < normalizedFinalSegments.Count; i++)
@@ -2090,7 +1957,7 @@ namespace AdvancedRoadNaming.Systems
             return result;
         }
 
-        public bool ReapplyAllSavedRoutes(out int reapplied, out int failed, out string message)
+        public bool ReapplyAllSavedRoutes(RoadRouteToolMode mode, out int reapplied, out int failed, out string message)
         {
             reapplied = 0;
             failed = 0;
@@ -2098,13 +1965,15 @@ namespace AdvancedRoadNaming.Systems
             var routes = new List<SavedRouteRecord>();
             foreach (var route in _routeDatabase.Routes)
             {
-                if (route != null && !route.IsDeleted)
+                if (route != null && !route.IsDeleted && route.Mode == mode && IsSavedRouteRecordActive(route))
                     routes.Add(route);
             }
 
             if (routes.Count == 0)
             {
-                message = "There are no saved routes to reapply.";
+                message = mode == RoadRouteToolMode.RenameSelectedSegments
+                    ? "There are no saved rename routes to reapply."
+                    : "There are no saved routes to reapply.";
                 return false;
             }
 
@@ -2186,6 +2055,45 @@ namespace AdvancedRoadNaming.Systems
             return true;
         }
 
+        private bool TryBuildRouteSegmentsFromWaypoints(IReadOnlyList<RoadRouteWaypoint> waypoints, List<Entity> rebuilt, out string message)
+        {
+            rebuilt.Clear();
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                message = "No valid waypoint anchors remain.";
+                return true;
+            }
+
+            if (!_validation.IsValidRoadSegment(waypoints[0].Segment))
+            {
+                message = "The first waypoint anchor is missing.";
+                return false;
+            }
+
+            AddEntityIfMissing(rebuilt, waypoints[0].Segment);
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                if (!_validation.IsValidRoadSegment(waypoints[i - 1].Segment) || !_validation.IsValidRoadSegment(waypoints[i].Segment))
+                {
+                    message = "One or more waypoint anchors are missing.";
+                    return false;
+                }
+
+                var path = Pathing.FindPath(waypoints[i - 1].Segment, waypoints[i].Segment, 512);
+                if (path.Count == 0)
+                {
+                    message = $"Could not rebuild the path between waypoint {i} and {i + 1}.";
+                    return false;
+                }
+
+                for (var pathIndex = 0; pathIndex < path.Count; pathIndex++)
+                    AddEntityIfMissing(rebuilt, path[pathIndex]);
+            }
+
+            message = $"Built a route candidate with {rebuilt.Count} segment(s).";
+            return true;
+        }
+
         // Builds the little summary text shown in rebuild review so the player knows what changed.
         private string BuildRebuildReviewMessage(SavedRouteRecord route, IReadOnlyList<Entity> candidateSegments)
         {
@@ -2222,6 +2130,7 @@ namespace AdvancedRoadNaming.Systems
 
             var replayedRoutes = RebuildSegmentsAfterRouteDeletion(route, affectedSegments);
             route.ClearStoredData();
+            InvalidateProtectedAggregateRegistry("DeleteSavedRoute");
             message = affectedSegments.Count > 0
                 ? $"Deleted saved route {routeId} and reverted {affectedSegments.Count} affected road segment(s)."
                 : $"Deleted saved route {routeId}. No valid affected road segments remained to revert.";
@@ -2287,6 +2196,8 @@ namespace AdvancedRoadNaming.Systems
             _pendingPostLoadNameReapplyDelayTicks = 0;
             _pendingPostLoadNameReapplyAttempts = 0;
             _pendingPostLoadNameReapplyWaitingLogged = false;
+
+            InvalidateProtectedAggregateRegistry("RemoveAllRoadRouteModeData");
 
             message = $"Removed ROAD ROUTE mode data: {removedRecords} saved route record(s), {affectedSegments.Count} affected road segment(s), {metadataRecordsRemoved} route-only metadata record(s). Save the game to persist the cleanup.";
             Mod.log.Info(() => $"Road Naming: ROAD ROUTE mode cleanup complete. SavedRouteRecordsRemoved={removedRecords}, AffectedSegments={affectedSegments.Count}, RouteOnlyMetadataRecordsRemoved={metadataRecordsRemoved}, RemovedRouteCodes={removedRouteCodes.Count}.");
@@ -2360,11 +2271,13 @@ namespace AdvancedRoadNaming.Systems
 
             var affectedSet = new HashSet<Entity>(affectedSegments);
             var fallbackBaseNames = BuildBaseNameFallbackMap(deletedRoute, affectedSet);
+            var dormantRenameNames = CaptureDormantRenameNames(affectedSet, deletedRoute.Mode == RoadRouteToolMode.AssignMajorRouteNumber);
             ResetSegmentsToBaseMetadata(affectedSegments, fallbackBaseNames, deletedRoute);
 
             var remainingRoutes = GetReplayOrderedRoutes(affectedSet);
             for (var i = 0; i < remainingRoutes.Count; i++)
                 ReplaySavedRouteContribution(remainingRoutes[i], affectedSet);
+            RestoreDormantRenameNames(dormantRenameNames);
 
             ApplyResolvedMetadataToSegments(affectedSegments, "DeleteSavedRouteRevert");
             Mod.log.Info(() => $"Road Naming: route revert completed. DeletedRouteId={deletedRoute.RouteId}, AffectedSegments={affectedSegments.Count}, RemainingRoutesReplayed={remainingRoutes.Count}.");
@@ -2463,7 +2376,7 @@ namespace AdvancedRoadNaming.Systems
             var routes = new List<SavedRouteRecord>();
             foreach (var route in _routeDatabase.Routes)
             {
-                if (RouteTouchesAnyAffectedSegment(route, affectedSet))
+                if (IsSavedRouteRecordActive(route) && RouteTouchesAnyAffectedSegment(route, affectedSet))
                     routes.Add(route);
             }
 
@@ -2937,6 +2850,7 @@ namespace AdvancedRoadNaming.Systems
 
             ApplyResolvedMetadataToSegments(validSegments, "CaptureSavedRouteRoadNames");
             route.UpdatedAtUtcTicks = System.DateTime.UtcNow.Ticks;
+            InvalidateProtectedAggregateRegistry("CaptureSavedRouteRoadNames");
             message = $"Captured current road names for '{BuildRouteDisplayTitle(route)}'.";
             Mod.log.Info(() => $"Road Naming: saved route road-name capture complete. RouteId={route.RouteId}, Segments={validSegments.Count}, UpdatedSnapshots={updated}.");
             return true;
@@ -2959,10 +2873,25 @@ namespace AdvancedRoadNaming.Systems
         // Updates the saved route's base input value, like the route code or rename text.
         public bool UpdateSavedRouteInput(long routeId, string inputValue, out string message)
         {
-            if (_routeDatabase.UpdateInput(routeId, inputValue))
+            if (!_routeDatabase.TryGet(routeId, out var route))
             {
+                message = $"Saved route {routeId} was not found.";
+                return false;
+            }
+
+            var normalizedInput = inputValue?.Trim() ?? string.Empty;
+            if (route.Mode == RoadRouteToolMode.RenameSelectedSegments && string.IsNullOrWhiteSpace(normalizedInput))
+            {
+                message = $"Saved rename route {routeId} needs a non-empty road name.";
+                return false;
+            }
+
+            if (_routeDatabase.UpdateInput(routeId, normalizedInput))
+            {
+                if (route.Mode == RoadRouteToolMode.RenameSelectedSegments && !route.IsUserDefinedTitle)
+                    route.DisplayTitle = normalizedInput;
                 message = $"Updated saved route {routeId} input value.";
-                Mod.log.Info(() => $"Road Naming: route input updated. RouteId={routeId}, Input='{inputValue}'.");
+                Mod.log.Info(() => $"Road Naming: route input updated. RouteId={routeId}, Input='{normalizedInput}'.");
                 return true;
             }
 
@@ -2984,6 +2913,20 @@ namespace AdvancedRoadNaming.Systems
             return false;
         }
 
+        // Updates saved route shield style intent. Rendering changes immediately, but road names are not reapplied.
+        public bool UpdateSavedRouteShieldStyle(long routeId, RouteShieldStyle shieldStyle, string shieldImportId, out string message)
+        {
+            if (_routeDatabase.UpdateShieldStyle(routeId, shieldStyle, shieldImportId))
+            {
+                message = $"Updated saved route {routeId} shield style.";
+                Mod.log.Info(() => $"Road Naming: route shield style updated. RouteId={routeId}, ShieldStyle={shieldStyle}.");
+                return true;
+            }
+
+            message = $"Saved route {routeId} was not found.";
+            return false;
+        }
+
         // Intentionally blocked direct rebuild path.
         // The player has to go through preview/review first so nothing dodgy gets applied blind.
         public bool RebuildSavedRoute(long routeId, out string message)
@@ -2994,7 +2937,7 @@ namespace AdvancedRoadNaming.Systems
         }
 
         // Builds the Saved Routes payload consumed by the UI panel.
-        public string BuildSavedRoutesJson()
+        public string BuildSavedRoutesJson(RoadRouteToolMode mode)
         {
             var builder = new StringBuilder();
             builder.Append('[');
@@ -3007,10 +2950,14 @@ namespace AdvancedRoadNaming.Systems
                     continue;
                 }
 
+                if (route.Mode != mode || !IsSavedRouteRecordActive(route))
+                    continue;
+
                 try
                 {
                     EnsureRouteCorridorMetadata(route);
                     var status = EvaluateSavedRouteStatus(route).ToString();
+                    var orphanWaypointCount = CountInvalidRouteWaypointAnchors(route);
                     AppendJsonSeparator(builder, ref appended);
                     builder.Append("{" +
                         "\"id\":" + route.RouteId.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
@@ -3022,8 +2969,10 @@ namespace AdvancedRoadNaming.Systems
                         "\"routeCode\":" + JsonString(route.RouteCode ?? route.BaseInputValue) + "," +
                         "\"routePrefixType\":" + JsonString(route.RoutePrefixType) + "," +
                         "\"routeNumberPlacement\":" + JsonString(route.RouteNumberPlacement.ToString()) + "," +
+                        "\"routeShieldStyle\":" + JsonString(BuildRouteShieldSelection(route)) + "," +
                         "\"segments\":" + route.SegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"waypoints\":" + route.WaypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                        "\"orphanWaypointCount\":" + orphanWaypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"status\":" + JsonString(status) + "," +
                         "\"streets\":" + JsonString(BuildStreetSummary(route)) + "," +
                         "\"startDistrictName\":" + JsonString(route.StartDistrictName) + "," +
@@ -3050,8 +2999,10 @@ namespace AdvancedRoadNaming.Systems
                         "\"routeCode\":" + JsonString(route.RouteCode ?? route.BaseInputValue) + "," +
                         "\"routePrefixType\":" + JsonString(route.RoutePrefixType) + "," +
                         "\"routeNumberPlacement\":" + JsonString(route.RouteNumberPlacement.ToString()) + "," +
+                        "\"routeShieldStyle\":" + JsonString(BuildRouteShieldSelection(route)) + "," +
                         "\"segments\":" + route.SegmentCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"waypoints\":" + route.WaypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                        "\"orphanWaypointCount\":" + CountInvalidRouteWaypointAnchors(route).ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                         "\"status\":" + JsonString(SavedRouteStatus.PartiallyValid.ToString()) + "," +
                         "\"streets\":" + JsonString(string.Empty) + "," +
                         "\"startDistrictName\":" + JsonString(route.StartDistrictName) + "," +
@@ -3207,6 +3158,44 @@ namespace AdvancedRoadNaming.Systems
             ApplyRouteCorridorMetadata(route, BuildRouteCorridorMetadata(route.OrderedSegmentIds, route.OriginalStreetNamesSnapshot));
         }
 
+        private static bool IsSavedRouteRecordActive(SavedRouteRecord route)
+        {
+            return route != null
+                && !route.IsDeleted
+                && (route.Mode != RoadRouteToolMode.RenameSelectedSegments || Mod.Settings?.EnableSavedRenameRoutes != false);
+        }
+
+        private Dictionary<Entity, string> CaptureDormantRenameNames(IEnumerable<Entity> affectedSegments, bool preserveForNumberedRoute)
+        {
+            var names = new Dictionary<Entity, string>();
+            if ((!preserveForNumberedRoute && Mod.Settings?.EnableSavedRenameRoutes != false) || affectedSegments == null)
+                return names;
+
+            foreach (var segment in affectedSegments)
+            {
+                if (_repository.TryGet(segment, out var metadata) && !string.IsNullOrWhiteSpace(metadata.OptionalCustomRoadName))
+                    names[segment] = metadata.OptionalCustomRoadName.Trim();
+            }
+
+            return names;
+        }
+
+        private void RestoreDormantRenameNames(Dictionary<Entity, string> names)
+        {
+            if (names == null || names.Count == 0)
+                return;
+
+            foreach (var pair in names)
+            {
+                if (!_validation.IsValidRoadSegment(pair.Key))
+                    continue;
+
+                var metadata = _repository.GetOrCreate(pair.Key);
+                metadata.OptionalCustomRoadName = pair.Value;
+                metadata.Touch();
+            }
+        }
+
         // Builds the stored title for a route record when the user has not supplied a custom one.
         private string BuildRouteRecordTitle(RoadRouteToolMode mode, string inputValue, RouteCorridorMetadata metadata)
         {
@@ -3224,6 +3213,9 @@ namespace AdvancedRoadNaming.Systems
 
             if (route.IsUserDefinedTitle && !string.IsNullOrWhiteSpace(route.DisplayTitle))
                 return route.DisplayTitle.Trim();
+
+            if (route.Mode == RoadRouteToolMode.RenameSelectedSegments && !string.IsNullOrWhiteSpace(route.BaseInputValue))
+                return route.BaseInputValue.Trim();
 
             return BuildResolvedRouteTitle(route.Mode, route.RouteCode ?? route.BaseInputValue, route.DerivedDisplayCorridor, route.StartRoadName, route.EndRoadName, route.DisplayTitle);
         }
@@ -3388,7 +3380,7 @@ namespace AdvancedRoadNaming.Systems
                 return "None";
 
             var first = value[0].ToString();
-            return first == "M" || first == "A" || first == "B" || first == "C" ? first : "Custom";
+            return first == "M" || first == "A" || first == "B" || first == "C" || first == "I" ? first : "Custom";
         }
 
         // Small helper to keep entity lists unique.
@@ -3495,7 +3487,6 @@ namespace AdvancedRoadNaming.Systems
             _routeDatabase.Clear();
             ResetPersistedNameReconciliation();
             _protectedModAggregateGroups.Clear();
-            _pendingProtectedModAggregateValidation.Clear();
             _nextProtectedModAggregateGroupId = 1;
             var version = 0;
             reader.Read(out version);
@@ -3548,6 +3539,7 @@ namespace AdvancedRoadNaming.Systems
                 DeserializeRoutes(reader, version);
 
             QueuePostLoadNameReapply("Deserialize");
+            InvalidateProtectedAggregateRegistry("Deserialize");
             Mod.log.Info(() => $"Deserialized {_repository.Count} segment route metadata record(s) and {_routeDatabase.Count} saved route record(s); deferred post-load name reapply scheduled.");
         }
 
@@ -3559,12 +3551,12 @@ namespace AdvancedRoadNaming.Systems
             ResetPersistedNameReconciliation();
             _aggregateStabilityChecks.Clear();
             _protectedModAggregateGroups.Clear();
-            _pendingProtectedModAggregateValidation.Clear();
             _nextProtectedModAggregateGroupId = 1;
             _pendingPostLoadNameReapply = false;
             _pendingPostLoadNameReapplyDelayTicks = 0;
             _pendingPostLoadNameReapplyAttempts = 0;
             _pendingPostLoadNameReapplyWaitingLogged = false;
+            InvalidateProtectedAggregateRegistry("SetDefaults");
         }
 
         // Queues a delayed post-load name restore rather than writing immediately during deserialisation.
@@ -3614,6 +3606,7 @@ namespace AdvancedRoadNaming.Systems
                 _pendingPostLoadNameReapplyDelayTicks = 0;
                 _pendingPostLoadNameReapplyAttempts = 0;
                 _pendingPostLoadNameReapplyWaitingLogged = false;
+                InvalidateProtectedAggregateRegistry("PostLoadNameReapply");
                 Mod.log.Info(() => $"Road Naming: post-load name reapply completed. Reapplied={reapplied}, SkippedMissingOrInvalid={skipped}, SavedRoutes={_routeDatabase.Count}.");
             }
             catch (System.Exception ex)
@@ -3684,6 +3677,7 @@ namespace AdvancedRoadNaming.Systems
                 writer.Write(route.RouteCode ?? string.Empty);
                 writer.Write(route.RoutePrefixType ?? string.Empty);
                 writer.Write((int)route.RouteNumberPlacement);
+                writer.Write((int)route.RouteShieldStyle);
                 writer.Write(route.StartDistrictName ?? string.Empty);
                 writer.Write(route.EndDistrictName ?? string.Empty);
                 writer.Write(route.StartRoadName ?? string.Empty);
@@ -3701,6 +3695,7 @@ namespace AdvancedRoadNaming.Systems
                 writer.Write(route.EndAnchorPositionY);
                 writer.Write(route.EndAnchorPositionZ);
                 writer.Write(route.LastKnownResolvedSegmentCount);
+                writer.Write(route.RouteShieldImportId ?? string.Empty);
 
                 writer.Write(route.Waypoints.Count);
                 for (var i = 0; i < route.Waypoints.Count; i++)
@@ -3760,6 +3755,7 @@ namespace AdvancedRoadNaming.Systems
                 var routeCode = string.Empty;
                 var routePrefixType = string.Empty;
                 var routePlacementValue = (int)RouteNumberPlacement.AfterBaseName;
+                var routeShieldStyleValue = (int)RouteShieldStyle.None;
                 var startDistrictName = string.Empty;
                 var endDistrictName = string.Empty;
                 var startRoadName = string.Empty;
@@ -3777,6 +3773,7 @@ namespace AdvancedRoadNaming.Systems
                 float endAnchorY = 0;
                 float endAnchorZ = 0;
                 var lastKnownResolvedSegmentCount = 0;
+                var routeShieldImportId = string.Empty;
 
                 if (version >= 3)
                 {
@@ -3786,6 +3783,8 @@ namespace AdvancedRoadNaming.Systems
                     reader.Read(out routePrefixType);
                     if (version >= 6)
                         reader.Read(out routePlacementValue);
+                    if (version >= 7)
+                        reader.Read(out routeShieldStyleValue);
                     reader.Read(out startDistrictName);
                     reader.Read(out endDistrictName);
                     reader.Read(out startRoadName);
@@ -3806,6 +3805,8 @@ namespace AdvancedRoadNaming.Systems
                         reader.Read(out endAnchorZ);
                         reader.Read(out lastKnownResolvedSegmentCount);
                     }
+                    if (version >= 9)
+                        reader.Read(out routeShieldImportId);
                 }
                 else
                 {
@@ -3821,6 +3822,12 @@ namespace AdvancedRoadNaming.Systems
                 route.RouteNumberPlacement = routePlacementValue == (int)RouteNumberPlacement.BeforeBaseName
                     ? RouteNumberPlacement.BeforeBaseName
                     : RouteNumberPlacement.AfterBaseName;
+                route.RouteShieldStyle = IsDefinedRouteShieldStyle(routeShieldStyleValue)
+                    ? (RouteShieldStyle)routeShieldStyleValue
+                    : RouteShieldStyle.None;
+                route.RouteShieldImportId = route.RouteShieldStyle == RouteShieldStyle.Imported
+                    ? routeShieldImportId
+                    : string.Empty;
                 route.CreatedAtUtcTicks = createdTicks;
                 route.UpdatedAtUtcTicks = updatedTicks;
                 route.LastAppliedUtcTicks = lastAppliedTicks > 0 ? lastAppliedTicks : (createdTicks > 0 ? createdTicks : updatedTicks);
@@ -4001,6 +4008,20 @@ namespace AdvancedRoadNaming.Systems
         {
             if (!EntityManager.HasComponent<T>(segment))
                 EntityManager.AddComponent<T>(segment);
+        }
+
+        private static bool IsDefinedRouteShieldStyle(int shieldStyleValue)
+        {
+            return shieldStyleValue >= (int)RouteShieldStyle.None && shieldStyleValue <= (int)RouteShieldStyle.Imported;
+        }
+
+        private static string BuildRouteShieldSelection(SavedRouteRecord route)
+        {
+            return route != null
+                && route.RouteShieldStyle == RouteShieldStyle.Imported
+                && !string.IsNullOrWhiteSpace(route.RouteShieldImportId)
+                    ? RouteShieldImportCatalog.SelectionValue(route.RouteShieldImportId)
+                    : (route?.RouteShieldStyle ?? RouteShieldStyle.None).ToString();
         }
 
         // Makes a shallow-but-good-enough copy of segment metadata for preview work.

@@ -40,6 +40,26 @@ namespace AdvancedRoadNaming.Services
             for (var i = 0; i < segments.Count; i++)
                 segmentInfos[i] = BuildSegmentInfo(entityManager, segments[i]);
 
+            try
+            {
+                BuildTrimmedRouteGeometry(segments, waypoints, curves, segmentInfos);
+            }
+            catch
+            {
+                curves.Clear();
+                AddFullValidSegmentCurves(segmentInfos, curves);
+            }
+
+            if (curves.Count == 0)
+                AddFullValidSegmentCurves(segmentInfos, curves);
+        }
+
+        private static void BuildTrimmedRouteGeometry(
+            IReadOnlyList<Entity> segments,
+            IReadOnlyList<RoadRouteWaypoint> waypoints,
+            List<Bezier4x3> curves,
+            SegmentInfo[] segmentInfos)
+        {
             var connections = new ConnectionInfo?[math.max(segments.Count - 1, 0)];
             for (var i = 0; i < connections.Length; i++)
             {
@@ -61,17 +81,44 @@ namespace AdvancedRoadNaming.Services
                 var endEndpoint = hasEndEndpoint ? (RoadRouteWaypoint?)endWaypoint : null;
 
                 if (!TryBuildSegmentRange(segmentInfos[i], previous, next, startEndpoint, endEndpoint, i == 0, i == segmentInfos.Length - 1, out var range))
+                {
+                    curves.Add(segmentInfos[i].Curve);
                     continue;
+                }
 
-                curves.Add(range.x <= RangeEpsilon && range.y >= 1f - RangeEpsilon
-                    ? segmentInfos[i].Curve
-                    : RouteOverlayMath.Cut(segmentInfos[i].Curve, range));
+                if (range.x <= RangeEpsilon && range.y >= 1f - RangeEpsilon)
+                {
+                    curves.Add(segmentInfos[i].Curve);
+                }
+                else
+                {
+                    try
+                    {
+                        curves.Add(RouteOverlayMath.Cut(segmentInfos[i].Curve, range));
+                    }
+                    catch
+                    {
+                        curves.Add(segmentInfos[i].Curve);
+                    }
+                }
             }
 
             for (var i = 0; i < connections.Length; i++)
             {
                 if (connections[i].HasValue && TryBuildJoinCurve(connections[i].Value, out var joinCurve))
                     curves.Add(joinCurve);
+            }
+        }
+
+        private static void AddFullValidSegmentCurves(SegmentInfo[] segmentInfos, List<Bezier4x3> curves)
+        {
+            if (segmentInfos == null)
+                return;
+
+            for (var i = 0; i < segmentInfos.Length; i++)
+            {
+                if (segmentInfos[i].IsValid)
+                    curves.Add(segmentInfos[i].Curve);
             }
         }
 

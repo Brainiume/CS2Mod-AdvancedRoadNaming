@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "GermanyAutobahn",
+  "name": "Germany Autobahn",
+  "region": "Germany",
+  "system": "Motorway",
+  "svg": "Bundesautobahn_leer.svg",
+  "widthRem": 46,
+  "heightRem": 28,
+  "textLayers": [
+    { "id": "route-code", "source": "routeCode", "text": "", "color": "#FFFFFF", "fontSizeRem": 22, "offsetXRem": 0, "offsetYRem": 0, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

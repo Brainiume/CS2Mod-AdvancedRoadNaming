@@ -1,5 +1,23 @@
 import { ModuleRegistry } from "cs2/modding";
+import React from "react";
 import type { IVanillaComponents, IVanillaFocus, IVanillaThemes as IVanillaThemes } from "./types";
+
+const trafficChartsPath =
+    "game-ui/game/components/selected-info-panel/shared-components/traffic-charts/traffic-chart.tsx";
+
+let activeModuleRegistry: ModuleRegistry | undefined;
+let trafficChartsResolved = false;
+let trafficCharts: TrafficCharts | null = null;
+
+export interface TrafficChartProps {
+    data: number[];
+    className?: string;
+}
+
+export interface TrafficCharts {
+    TrafficFlowChart: React.FC<TrafficChartProps>;
+    TrafficVolumeChart: React.FC<TrafficChartProps>;
+}
 
 const modulePaths = [
     {
@@ -132,6 +150,7 @@ export const VT = {} as IVanillaThemes;
 export const VF = {} as IVanillaFocus;
 
 export const initialize = (moduleRegistry: ModuleRegistry) => {
+    activeModuleRegistry = moduleRegistry;
     modulePaths.forEach(({ path, components }) => {
         const module = moduleRegistry.registry.get(path);
         components.forEach((component) => (VC[component] = module?.[component]));
@@ -145,3 +164,22 @@ export const initialize = (moduleRegistry: ModuleRegistry) => {
     VF.FOCUS_DISABLED = focusKey?.FOCUS_DISABLED;
     VF.FOCUS_AUTO = focusKey?.FOCUS_AUTO;
 };
+
+export function resolveTrafficCharts(): TrafficCharts | null {
+    if (trafficChartsResolved) {
+        return trafficCharts;
+    }
+
+    trafficChartsResolved = true;
+    const module = activeModuleRegistry?.registry.get(trafficChartsPath);
+    if (module?.TrafficFlowChart && module?.TrafficVolumeChart) {
+        trafficCharts = {
+            TrafficFlowChart: module.TrafficFlowChart,
+            TrafficVolumeChart: module.TrafficVolumeChart,
+        };
+    } else {
+        console.error(`[AdvancedRoadNaming] Vanilla traffic chart module is unavailable: ${trafficChartsPath}`);
+    }
+
+    return trafficCharts;
+}

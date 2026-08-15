@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "FranceAutoroute",
+  "name": "France Autoroute",
+  "region": "France",
+  "system": "Motorway",
+  "svg": "Autoroute_logo_model.svg",
+  "widthRem": 76,
+  "heightRem": 38,
+  "textLayers": [
+    { "id": "route-code", "source": "routeCode", "text": "", "color": "#FFFFFF", "fontSizeRem": 22, "offsetXRem": 12, "offsetYRem": 0, "scalePercent": 58, "rotationDegrees": 0 }
+  ]
+}

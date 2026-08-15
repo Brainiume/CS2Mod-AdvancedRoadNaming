@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="380" viewBox="0 0 310 380" shape-rendering="geometricPrecision">
+  <path fill="#fff" stroke="#000" stroke-width="12" d="M42 6h226c20 0 36 16 36 36v216c0 31-17 57-45 70l-104 45-104-45C23 315 6 289 6 258V42C6 22 22 6 42 6z"/>
+  <path fill="none" stroke="#000" stroke-width="10" d="M47 24h216c13 0 23 10 23 23v204c0 25-14 47-37 57l-94 41-94-41c-23-10-37-32-37-57V47c0-13 10-23 23-23z"/>
+</svg>

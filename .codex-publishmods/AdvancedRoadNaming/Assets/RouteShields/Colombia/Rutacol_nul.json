@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ColombiaNational",
+  "name": "Colombia National Route",
+  "region": "Colombia",
+  "system": "National",
+  "svg": "Rutacol_nul.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 21, "offsetXRem": 0, "offsetYRem": -5, "scalePercent": 66, "rotationDegrees": 0 }
+  ]
+}

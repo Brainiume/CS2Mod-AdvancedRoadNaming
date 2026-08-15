@@ -8,7 +8,7 @@ namespace AdvancedRoadNaming.Services
     public sealed class RouteSelectionController
     {
         private const int AutoPathMaxDepth = 512;
-        private const float ExistingWaypointSnapDistance = 20f;
+        private const float ExistingWaypointSnapDistance = 16f;
 
         private readonly SegmentValidationService _validation;
         private readonly RoadNetworkPathingService _pathing;
@@ -46,6 +46,8 @@ namespace AdvancedRoadNaming.Services
 
         public bool HasActiveMoveEdit => _activeEditMode == WaypointEditMode.Move && _activeEditIndex >= 0;
 
+        public bool HasActiveInsertEdit => _activeEditMode == WaypointEditMode.Insert && _activeEditIndex >= 0;
+
         public int ActiveEditIndex => _activeEditIndex;
 
         public bool HasHoveredRouteWaypoint => HoveredWaypointIndex >= 0;
@@ -67,10 +69,15 @@ namespace AdvancedRoadNaming.Services
 
         public void SetHovered(RoadRouteWaypoint waypoint)
         {
+            SetHovered(waypoint, true);
+        }
+
+        public void SetHovered(RoadRouteWaypoint waypoint, bool allowRouteEditSnap)
+        {
             HoveredSegment = waypoint.Segment;
             HoveredWaypoint = waypoint;
-            HoveredWaypointIndex = FindHoveredWaypointIndex(waypoint);
-            HoveredInsertionIndex = HoveredWaypointIndex >= 0 ? -1 : FindHoveredInsertionIndex(waypoint);
+            HoveredWaypointIndex = allowRouteEditSnap ? FindHoveredWaypointIndex(waypoint) : -1;
+            HoveredInsertionIndex = allowRouteEditSnap && HoveredWaypointIndex < 0 ? FindHoveredInsertionIndex(waypoint) : -1;
             RebuildPreviewState();
         }
 
@@ -99,6 +106,28 @@ namespace AdvancedRoadNaming.Services
             return false;
         }
 
+        public bool TryBeginInsertFromNearestWaypoint()
+        {
+            Warning = null;
+            if (!HoveredWaypoint.HasValue)
+                return false;
+
+            if (_waypoints.Count == 0)
+                return false;
+
+            if (HoveredWaypointIndex >= 0 || HoveredInsertionIndex >= 0)
+                return false;
+
+            var insertionIndex = FindNearestWaypointInsertionIndex(HoveredWaypoint.Value);
+            if (insertionIndex < 0)
+                return false;
+
+            _activeEditMode = WaypointEditMode.Insert;
+            _activeEditIndex = insertionIndex;
+            RebuildPreviewState();
+            return true;
+        }
+
         public bool CommitActiveEdit()
         {
             Warning = null;
@@ -107,7 +136,7 @@ namespace AdvancedRoadNaming.Services
 
             if (!HoveredWaypoint.HasValue)
             {
-                Warning = "Place the waypoint on a valid road segment.";
+                Warning = "Keep the waypoint near a valid road while dragging.";
                 return false;
             }
 
@@ -268,9 +297,9 @@ namespace AdvancedRoadNaming.Services
                 switch (_activeEditMode)
                 {
                     case WaypointEditMode.Insert:
-                        return $"Insert mode active. Drag the new waypoint along a road, then release to place it. Right-click cancels. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
+                        return $"Insert mode active. Drag near a road, then release to place the new waypoint. Right-click cancels. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
                     case WaypointEditMode.Move:
-                        return $"Move mode active. Click a new road position or drag and release to place the blue waypoint. Right-click the waypoint to remove it. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
+                        return $"Move mode active. Drag near a road, then release to move the waypoint. Right-click cancels. {_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments.";
                 }
             }
 
@@ -281,7 +310,7 @@ namespace AdvancedRoadNaming.Services
                 return "Place next waypoint to compute a connected road path.";
 
             if (HoveredWaypointIndex >= 0)
-                return $"{_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments. Click and drag an existing waypoint to move it, or right-click to remove it.";
+                return $"{_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments. Drag the snapped waypoint to move it, or right-click and release to remove it.";
 
             if (HoveredInsertionIndex >= 0)
                 return $"{_waypoints.Count} waypoints, {_selectedSegments.Count} computed segments. Click and drag the route line to insert a waypoint.";
@@ -503,6 +532,64 @@ namespace AdvancedRoadNaming.Services
             }
 
             return -1;
+        }
+
+        private int FindNearestWaypointInsertionIndex(RoadRouteWaypoint hoverWaypoint)
+        {
+            var nearestIndex = -1;
+            var nearestDistance = float.MaxValue;
+            for (var i = 0; i < _waypoints.Count; i++)
+            {
+                var distance = math.distance(_waypoints[i].Position, hoverWaypoint.Position);
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearestIndex = i;
+                }
+            }
+
+            if (nearestIndex < 0)
+                return -1;
+
+            if (_waypoints.Count == 1 || nearestIndex == 0)
+                return 0;
+
+            if (nearestIndex == _waypoints.Count - 1)
+                return _waypoints.Count;
+
+            var beforeCost = EstimateInsertionCost(_waypoints[nearestIndex - 1], hoverWaypoint, _waypoints[nearestIndex]);
+            var afterCost = EstimateInsertionCost(_waypoints[nearestIndex], hoverWaypoint, _waypoints[nearestIndex + 1]);
+
+            if (beforeCost < 0f && afterCost < 0f)
+                return -1;
+            if (beforeCost < 0f)
+                return nearestIndex + 1;
+            if (afterCost < 0f)
+                return nearestIndex;
+
+            return beforeCost <= afterCost ? nearestIndex : nearestIndex + 1;
+        }
+
+        private float EstimateInsertionCost(RoadRouteWaypoint from, RoadRouteWaypoint waypoint, RoadRouteWaypoint to)
+        {
+            var first = EstimatePathCost(from, waypoint);
+            var second = EstimatePathCost(waypoint, to);
+            return first < 0f || second < 0f ? -1f : first + second;
+        }
+
+        private float EstimatePathCost(RoadRouteWaypoint from, RoadRouteWaypoint to)
+        {
+            if (!_validation.IsValidRoadSegment(from.Segment) || !_validation.IsValidRoadSegment(to.Segment))
+                return -1f;
+
+            if (from.Segment == to.Segment)
+                return math.distance(from.Position, to.Position);
+
+            var path = _pathing.FindPath(from.Segment, to.Segment, AutoPathMaxDepth);
+            if (path == null || path.Count == 0)
+                return -1f;
+
+            return path.Count;
         }
 
         private static bool PathContainsSegment(IReadOnlyList<Entity> path, Entity segment)

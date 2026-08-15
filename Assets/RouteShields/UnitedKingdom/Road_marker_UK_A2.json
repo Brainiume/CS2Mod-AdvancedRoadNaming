@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "UKARoad",
+  "name": "United Kingdom A Road",
+  "region": "United Kingdom",
+  "system": "National",
+  "svg": "Road_marker_UK_A2.svg",
+  "widthRem": 46,
+  "heightRem": 28,
+  "textLayers": [
+    { "id": "route-code", "source": "routeCode", "text": "", "color": "#FFFFFF", "fontSizeRem": 22, "offsetXRem": 0, "offsetYRem": 0, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}
