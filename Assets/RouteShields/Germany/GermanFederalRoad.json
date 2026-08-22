@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "GermanyFederalRoad",
+  "name": "German Federal Road",
+  "region": "Germany",
+  "system": "National",
+  "svg": "GermanFederalRoad.svg",
+  "widthRem": 46,
+  "heightRem": 28,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#000000", "fontSizeRem": 22, "offsetXRem": 0, "offsetYRem": 0, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

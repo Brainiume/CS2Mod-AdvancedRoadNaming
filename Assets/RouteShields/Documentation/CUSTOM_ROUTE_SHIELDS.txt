@@ -27,13 +27,17 @@ QUICK START
 2. In the game, open Advanced Road Naming settings and select
    Refresh Route Shields.
 3. The mod creates a same-name JSON file beside the SVG if one is missing.
-4. Open RouteShieldDesigner.html in a normal web browser.
+4. In the same settings group, select Open Route Shield Designer. The form
+   opens in your default web browser.
 5. Use Load existing JSON and select the generated JSON file.
 6. Optionally use Load SVG preview and select the matching SVG.
 7. Adjust the shield and text settings.
-8. Download the JSON. Keep its filename the same as the SVG filename.
-9. Replace the JSON beside the SVG, then select Refresh Route Shields again.
-10. Open Browse shields in the route editor and use the Custom filter.
+8. Select Apply Changes. In supported browsers, this updates the opened JSON
+   file directly.
+9. If direct saving is unavailable, use Download JSON or Copy JSON and replace
+   the original JSON without changing its filename.
+10. Select Refresh Route Shields again, then open Browse shields in the route
+    editor and use the Custom filter.
 
 Example file pair:
 
@@ -360,4 +364,3 @@ BUILT-IN SHIELDS
 Built-in shield JSON definitions are stored with the installed mod assets.
 They use the same schema, but mod updates may overwrite direct edits. The
 ModsData folder is intended for user-created custom shields.
-

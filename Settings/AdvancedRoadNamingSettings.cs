@@ -208,6 +208,20 @@ namespace AdvancedRoadNaming.Settings
         }
 
         [SettingsUISection(GeneralTab, AdvancedGroup)]
+        [SettingsUIButton]
+        public bool OpenCustomRouteShieldFolder
+        {
+            set => RouteShieldImportCatalog.OpenImportFolder();
+        }
+
+        [SettingsUISection(GeneralTab, AdvancedGroup)]
+        [SettingsUIButton]
+        public bool OpenCustomRouteShieldDesigner
+        {
+            set => RouteShieldImportCatalog.OpenDesigner();
+        }
+
+        [SettingsUISection(GeneralTab, AdvancedGroup)]
         [SettingsUIValueVersion(typeof(RouteShieldImportCatalog), nameof(RouteShieldImportCatalog.Version))]
         public string RouteShieldCatalogStatus => RouteShieldImportCatalog.Status;
 

@@ -58,6 +58,10 @@ const SHIELD_STYLES: Record<string, RouteShieldStyle> = {
     IndiaNational: "IndiaNational",
     SouthAfricaRegional: "SouthAfricaRegional",
     NewZealandStateHighway: "NewZealandStateHighway",
+    GermanyFederalRoad: "GermanyFederalRoad",
+    ThailandHighway: "ThailandHighway",
+    ThailandMotorwayBlue: "ThailandMotorwayBlue",
+    ThailandMotorwayGreen: "ThailandMotorwayGreen",
     Imported: "Imported",
 };
 

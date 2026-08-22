@@ -48,7 +48,7 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.2.3" />
+	<ModVersion Value="0.2.3.1" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -58,22 +58,13 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
 Saved Rename Routes
-- Renamed roads can now be saved as reapplicable routes.
-- Added menus to create, manage, rebuild, delete, and reapply saved renames.
-- Added a setting to disable Saved Rename Routes and use the original renaming workflow.
-- Improved support for CJK and Bopomofo text input.
-
-Road Name Reliability
-- Improved protection against renamed roads unexpectedly merging back into ordinary roads.
-- Renamed roads should better retain their names after zoning changes, road upgrades, road movement, splitting and replacement.
-- Improved recovery when saved routes contain roads that were changed or removed.
+- Fixed Delete button not correctly positioned in UI
 
 Route Shields
-- All Route shield designs are now controlled through JSON files.
-- Shield text size, position, colour, rotation, and displayed parts can be customised.
-- Fixed shield previews becoming too small.
-- Shields should no longer drastically change size when the camera angle changes.
-- A custom shield designer html form is bundled in the ModsData folder which allows the interactive configuration of route shields without messing around with JSON
+- Added Thailand Route shields and German Federal Road Shield
+- Added button in mod settings which opens ModData folder where custom route shields can be added
+- Added button in mod settings which opens the Route Shield Designer in default web browser
+- Route Shield Designer now has an `Apply Changes` button which updates the JSON file being configured
 
 Known Issues
 - Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.

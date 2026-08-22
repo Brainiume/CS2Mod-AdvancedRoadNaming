@@ -27,6 +27,10 @@ namespace AdvancedRoadNaming.Domain
         IndiaNational = 22,
         SouthAfricaRegional = 23,
         NewZealandStateHighway = 24,
-        Imported = 25
+        Imported = 25,
+        GermanyFederalRoad = 26,
+        ThailandHighway = 27,
+        ThailandMotorwayBlue = 28,
+        ThailandMotorwayGreen = 29
     }
 }

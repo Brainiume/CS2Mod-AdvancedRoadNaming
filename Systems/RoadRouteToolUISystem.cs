@@ -876,8 +876,7 @@ namespace AdvancedRoadNaming.Systems
         private static RouteShieldStyle ParseRouteShieldStyle(string value)
         {
             if (Enum.TryParse<RouteShieldStyle>(value ?? string.Empty, true, out var shieldStyle)
-                && shieldStyle >= RouteShieldStyle.None
-                && shieldStyle <= RouteShieldStyle.Imported)
+                && Enum.IsDefined(typeof(RouteShieldStyle), shieldStyle))
             {
                 return shieldStyle;
             }

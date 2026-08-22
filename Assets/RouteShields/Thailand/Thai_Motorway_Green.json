@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ThailandMotorwayGreen",
+  "name": "Thailand Free Motorway",
+  "region": "Thailand",
+  "system": "Motorway",
+  "svg": "Thai_Motorway_Green.svg",
+  "widthRem": 34,
+  "heightRem": 34,
+  "textLayers": [
+    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 20, "offsetXRem": 0, "offsetYRem": 7, "scalePercent": 72, "rotationDegrees": 0 }
+  ]
+}

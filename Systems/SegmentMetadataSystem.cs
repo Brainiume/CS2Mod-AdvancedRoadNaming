@@ -4012,7 +4012,7 @@ namespace AdvancedRoadNaming.Systems
 
         private static bool IsDefinedRouteShieldStyle(int shieldStyleValue)
         {
-            return shieldStyleValue >= (int)RouteShieldStyle.None && shieldStyleValue <= (int)RouteShieldStyle.Imported;
+            return System.Enum.IsDefined(typeof(RouteShieldStyle), shieldStyleValue);
         }
 
         private static string BuildRouteShieldSelection(SavedRouteRecord route)

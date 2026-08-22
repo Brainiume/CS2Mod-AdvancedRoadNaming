@@ -49,6 +49,16 @@
     button.primary:hover { border-color: #c18aff; background: #8641bd; }
     button.danger { border-color: #7c4444; color: #ffd4d4; background: #3b292b; }
 
+    .apply-button {
+      width: 100%;
+      min-height: 54px;
+      margin-top: 14px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .apply-help { margin-top: 7px; }
+
     input, select, textarea {
       width: 100%;
       border: 1px solid #43535f;
@@ -240,7 +250,7 @@
   </header>
 
   <main class="page">
-    <div class="notice"><strong>Work in progress.</strong> Let the mod generate a JSON file first, then load it here. This preserves the stable id required by saved routes.</div>
+    <div class="notice"><strong>Work in progress.</strong> Let the mod generate a JSON file first, then open it here. Apply Changes updates that same file while preserving the stable id required by saved routes.</div>
 
     <div class="workspace">
       <div class="editor">
@@ -254,7 +264,7 @@
               <input class="file-input" id="jsonFile" type="file" accept="application/json,.json">
               <input class="file-input" id="svgFile" type="file" accept="image/svg+xml,.svg">
             </div>
-            <div class="help">Recommended: add the SVG to ModsData, refresh shields in the game, and load the JSON that the mod creates beside it.</div>
+            <div class="help">Recommended: add the SVG to ModsData, refresh shields in the game, and open the JSON that the mod creates beside it. Direct saving is used when the browser allows local file editing.</div>
           </div>
         </section>
 
@@ -320,6 +330,8 @@
                 <input id="previewScale" type="number" min="2" max="10" step="0.5" value="6">
               </div>
             </div>
+            <button type="button" class="primary apply-button" id="applyButton" disabled>Apply Changes</button>
+            <div class="help apply-help" id="applyHelp">Open a generated JSON file to enable direct saving.</div>
             <div class="status" id="status">Load a generated JSON file to begin.</div>
           </div>
         </section>
@@ -329,7 +341,7 @@
           <div class="section-body">
             <textarea class="json-output" id="jsonOutput" readonly spellcheck="false"></textarea>
             <div class="toolbar" style="margin-top:10px">
-              <button type="button" class="primary" id="downloadButton">Download JSON</button>
+              <button type="button" id="downloadButton">Download JSON</button>
               <button type="button" id="copyButton">Copy JSON</button>
             </div>
           </div>
@@ -342,8 +354,8 @@
       <ol>
         <li>Put an SVG in <code>ModsData\AdvancedRoadNaming\RouteShields</code> or a nested folder.</li>
         <li>Use <strong>Refresh Route Shields</strong> in the mod settings. The mod creates a matching JSON if needed.</li>
-        <li>Load that JSON in this page, optionally load the SVG for a preview, and adjust the fields.</li>
-        <li>Download the JSON with the same base filename as the SVG and replace the old sidecar file.</li>
+        <li>Open that JSON in this page, optionally load the SVG for a preview, and adjust the fields.</li>
+        <li>Select <strong>Apply Changes</strong> to update the opened JSON file directly. Download and Copy remain available as compatibility options.</li>
         <li>Refresh shields again, then select the shield from <strong>Browse shields</strong>.</li>
       </ol>
 
@@ -457,6 +469,9 @@
         textLayers: [defaultLayer(1)]
       };
       var svgDataUrl = "";
+      var activeJsonFileHandle = null;
+      var activeJsonFileName = "";
+      var directFileSavingSupported = typeof window.showOpenFilePicker === "function";
 
       var layersElement = document.getElementById("layers");
       var jsonOutput = document.getElementById("jsonOutput");
@@ -465,6 +480,8 @@
       var emptyPreview = document.getElementById("emptyPreview");
       var jsonFile = document.getElementById("jsonFile");
       var svgFile = document.getElementById("svgFile");
+      var applyButton = document.getElementById("applyButton");
+      var applyHelp = document.getElementById("applyHelp");
 
       function defaultLayer(index) {
         return {
@@ -645,10 +662,28 @@
           statusElement.textContent = errors[0] + (errors.length > 1 ? " (and " + (errors.length - 1) + " more)" : "");
         } else {
           statusElement.className = "status ok";
-          statusElement.textContent = "Definition is valid. Download it as " + jsonFilename() + ".";
+          statusElement.textContent = activeJsonFileHandle
+            ? "Definition is valid and ready to apply to " + activeJsonFileName + "."
+            : "Definition is valid. Download or copy it as " + jsonFilename() + ".";
         }
         renderPreview();
         document.getElementById("downloadButton").disabled = errors.length > 0;
+        updateApplyState(errors);
+      }
+
+      function updateApplyState(errors) {
+        var canWriteOpenedFile = activeJsonFileHandle && typeof activeJsonFileHandle.createWritable === "function";
+        applyButton.disabled = errors.length > 0 || !canWriteOpenedFile;
+
+        if (!directFileSavingSupported) {
+          applyHelp.textContent = "Direct saving is unavailable in this browser. Download JSON and Copy JSON still work.";
+        } else if (!activeJsonFileHandle) {
+          applyHelp.textContent = "Open a generated JSON file to enable direct saving.";
+        } else if (errors.length) {
+          applyHelp.textContent = "Fix the definition error above before applying changes.";
+        } else {
+          applyHelp.textContent = "Updates " + activeJsonFileName + " directly. Then refresh route shields in the game.";
+        }
       }
 
       function renderPreview() {
@@ -703,7 +738,10 @@
         return String(state.svg || "RouteShield.svg").replace(/\.svg$/i, "") + ".json";
       }
 
-      function loadJson(file) {
+      function loadJson(file, fileHandle) {
+        activeJsonFileHandle = null;
+        activeJsonFileName = "";
+        updateApplyState(validate());
         var reader = new FileReader();
         reader.onload = function () {
           try {
@@ -734,6 +772,8 @@
               })
             };
             if (!state.textLayers.length) state.textLayers.push(defaultLayer(1));
+            activeJsonFileHandle = fileHandle || null;
+            activeJsonFileName = file.name;
             syncFormFromState();
             renderLayers();
             updateOutputAndPreview();
@@ -743,6 +783,55 @@
           }
         };
         reader.readAsText(file);
+      }
+
+      async function openJsonFile() {
+        if (!directFileSavingSupported) {
+          jsonFile.click();
+          return;
+        }
+
+        try {
+          var handles = await window.showOpenFilePicker({
+            multiple: false,
+            types: [{
+              description: "Route shield JSON",
+              accept: { "application/json": [".json"] }
+            }]
+          });
+          if (!handles || !handles[0]) return;
+          var file = await handles[0].getFile();
+          loadJson(file, handles[0]);
+        } catch (error) {
+          if (error && error.name === "AbortError") return;
+          directFileSavingSupported = false;
+          statusElement.className = "status error";
+          statusElement.textContent = "This browser blocked direct file editing. Choose the JSON again to use the download and copy workflow.";
+          updateApplyState(validate());
+        }
+      }
+
+      async function applyChanges() {
+        updateOutputAndPreview();
+        if (validate().length || !activeJsonFileHandle || typeof activeJsonFileHandle.createWritable !== "function") return;
+
+        applyButton.disabled = true;
+        applyButton.textContent = "Applying...";
+        try {
+          var writable = await activeJsonFileHandle.createWritable();
+          await writable.write(jsonOutput.value + "\n");
+          await writable.close();
+          statusElement.className = "status ok";
+          statusElement.textContent = "Changes saved directly to " + activeJsonFileName + ". Return to the game and select Refresh Route Shields.";
+        } catch (error) {
+          statusElement.className = "status error";
+          statusElement.textContent = error && error.name === "AbortError"
+            ? "Saving was cancelled. The JSON file was not changed."
+            : "Could not update the JSON file directly. Download JSON and Copy JSON are still available.";
+        } finally {
+          applyButton.textContent = "Apply Changes";
+          applyButton.disabled = validate().length > 0 || !activeJsonFileHandle;
+        }
       }
 
       function loadSvg(file) {
@@ -767,10 +856,11 @@
       });
       document.getElementById("sampleCode").addEventListener("input", renderPreview);
       document.getElementById("previewScale").addEventListener("input", renderPreview);
-      document.getElementById("loadJsonButton").addEventListener("click", function () { jsonFile.click(); });
+      document.getElementById("loadJsonButton").addEventListener("click", openJsonFile);
       document.getElementById("loadSvgButton").addEventListener("click", function () { svgFile.click(); });
-      jsonFile.addEventListener("change", function () { if (jsonFile.files[0]) loadJson(jsonFile.files[0]); jsonFile.value = ""; });
+      jsonFile.addEventListener("change", function () { if (jsonFile.files[0]) loadJson(jsonFile.files[0], null); jsonFile.value = ""; });
       svgFile.addEventListener("change", function () { if (svgFile.files[0]) loadSvg(svgFile.files[0]); svgFile.value = ""; });
+      applyButton.addEventListener("click", applyChanges);
 
       document.getElementById("addLayerButton").addEventListener("click", function () {
         if (state.textLayers.length >= MAX_LAYERS) return;
@@ -792,6 +882,8 @@
           textLayers: [defaultLayer(1)]
         };
         svgDataUrl = "";
+        activeJsonFileHandle = null;
+        activeJsonFileName = "";
         syncFormFromState();
         renderLayers();
         updateOutputAndPreview();

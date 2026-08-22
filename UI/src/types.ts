@@ -61,6 +61,10 @@ export type RouteShieldStyle =
     | "IndiaNational"
     | "SouthAfricaRegional"
     | "NewZealandStateHighway"
+    | "GermanyFederalRoad"
+    | "ThailandHighway"
+    | "ThailandMotorwayBlue"
+    | "ThailandMotorwayGreen"
     | "Imported";
 
 export type RouteShieldSelection = RouteShieldStyle | `Imported:${string}`;

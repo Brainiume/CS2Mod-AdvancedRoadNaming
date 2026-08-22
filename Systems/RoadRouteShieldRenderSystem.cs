@@ -331,7 +331,11 @@ namespace AdvancedRoadNaming.Systems
                 || style == RouteShieldStyle.AustralianNationalShield
                 || style == RouteShieldStyle.BlueHighwayShield
                 || style == RouteShieldStyle.BlackWhiteShield
-                || (style >= RouteShieldStyle.USInterstate && style <= RouteShieldStyle.NewZealandStateHighway);
+                || (style >= RouteShieldStyle.USInterstate && style <= RouteShieldStyle.NewZealandStateHighway)
+                || style == RouteShieldStyle.GermanyFederalRoad
+                || style == RouteShieldStyle.ThailandHighway
+                || style == RouteShieldStyle.ThailandMotorwayBlue
+                || style == RouteShieldStyle.ThailandMotorwayGreen;
         }
 
         private static RouteShieldStyle NormalizeStyle(RouteShieldStyle style)

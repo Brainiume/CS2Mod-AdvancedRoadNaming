@@ -108,6 +108,10 @@ namespace AdvancedRoadNaming.L10N
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.EnableSavedRenameRoutes)), "Save renamed road corridors so they can be reviewed, manipulated, and reapplied. Disable for the lightweight direct-renaming workflow." },
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.RefreshCustomRouteShields)), "Refresh Route Shields" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.RefreshCustomRouteShields)), "Reload bundled and custom SVG and JSON route shield definitions. Custom shields are a work in progress." },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.OpenCustomRouteShieldFolder)), "Open ModsData Folder" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.OpenCustomRouteShieldFolder)), "Open the ModsData folder where custom route shield SVG and JSON files are stored." },
+                    { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.OpenCustomRouteShieldDesigner)), "Open Route Shield Designer" },
+                    { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.OpenCustomRouteShieldDesigner)), "Open the work-in-progress custom route shield form in your default web browser." },
                     { _settings.GetOptionLabelLocaleID(nameof(AdvancedRoadNamingSettings.RouteShieldCatalogStatus)), "Route Shield Catalog Status" },
                     { _settings.GetOptionDescLocaleID(nameof(AdvancedRoadNamingSettings.RouteShieldCatalogStatus)), "Loaded built-in and custom definition counts, validation errors, and the latest error." },
 

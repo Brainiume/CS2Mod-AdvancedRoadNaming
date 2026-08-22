@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using AdvancedRoadNaming.Domain;
+using Colossal;
 
 namespace AdvancedRoadNaming.Services
 {
@@ -166,6 +167,59 @@ namespace AdvancedRoadNaming.Services
             ErrorCount = errors.Count;
             LatestError = errors.Count == 0 ? string.Empty : errors[errors.Count - 1];
             Version++;
+        }
+
+        public static void OpenDesigner()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(RootPath))
+                {
+                    Mod.WarnAlways("Road Naming: the custom route shield directory is unavailable, so the designer could not be opened.");
+                    return;
+                }
+
+                Directory.CreateDirectory(RootPath);
+                var designerPath = Path.Combine(RootPath, "RouteShieldDesigner.html");
+                if (!File.Exists(designerPath))
+                {
+                    var documentationRoot = string.IsNullOrWhiteSpace(BuiltInRootPath)
+                        ? string.Empty
+                        : Path.Combine(BuiltInRootPath, "Documentation");
+                    CopyDocumentationFile(documentationRoot, "RouteShieldDesigner.html", "RouteShieldDesigner.html");
+                }
+
+                if (!File.Exists(designerPath))
+                {
+                    Mod.WarnAlways("Road Naming: RouteShieldDesigner.html is missing from the custom route shield directory.");
+                    return;
+                }
+
+                UnityEngine.Application.OpenURL(new Uri(designerPath).AbsoluteUri);
+            }
+            catch (Exception exception)
+            {
+                Mod.WarnAlways(exception, "Road Naming: the custom route shield designer could not be opened.");
+            }
+        }
+
+        public static void OpenImportFolder()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(RootPath))
+                {
+                    Mod.WarnAlways("Road Naming: the custom route shield directory is unavailable, so it could not be opened.");
+                    return;
+                }
+
+                Directory.CreateDirectory(RootPath);
+                RemoteProcess.OpenFolder(RootPath);
+            }
+            catch (Exception exception)
+            {
+                Mod.WarnAlways(exception, "Road Naming: the custom route shield directory could not be opened.");
+            }
         }
 
         public static bool Contains(string id)
@@ -651,7 +705,11 @@ namespace AdvancedRoadNaming.Services
             return style == RouteShieldStyle.AustralianNationalShield
                 || style == RouteShieldStyle.BlueHighwayShield
                 || style == RouteShieldStyle.BlackWhiteShield
-                || (style >= RouteShieldStyle.USInterstate && style <= RouteShieldStyle.NewZealandStateHighway);
+                || (style >= RouteShieldStyle.USInterstate && style <= RouteShieldStyle.NewZealandStateHighway)
+                || style == RouteShieldStyle.GermanyFederalRoad
+                || style == RouteShieldStyle.ThailandHighway
+                || style == RouteShieldStyle.ThailandMotorwayBlue
+                || style == RouteShieldStyle.ThailandMotorwayGreen;
         }
 
         private static bool IsSupportedSystem(string value)
