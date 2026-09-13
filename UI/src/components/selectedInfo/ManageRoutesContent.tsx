@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FOCUS_AUTO, FocusDisabled } from "cs2/input";
-import { Button, PanelFoldout, PanelSectionRow } from "cs2/ui";
+import { Button, PanelFoldout, PanelSectionRow, Scrollable } from "cs2/ui";
 import { panelActions } from "bindings";
 import { DelayedTooltip } from "components/DelayedTooltip";
 import { findShieldDefinition, useRouteShieldCatalog } from "components/routeShields/shieldCatalog";
@@ -36,6 +36,21 @@ export function ManageRoutesContent(props: ManageRoutesContentProps) {
     const [statisticsChartsAvailable, setStatisticsChartsAvailable] = useState<boolean | null>(null);
     const [cleanupPromptRouteId, setCleanupPromptRouteId] = useState(0);
     const [routeListFilter, setRouteListFilter] = useState<RouteListFilter>("All");
+    const [districtFilter, setDistrictFilter] = useState("all");
+    const districtFilters = useMemo(() => {
+        const districts = new Map<string, string>();
+        props.routes.forEach(route => route.districts?.forEach(district => districts.set(district.id, district.name)));
+        return [
+            { id: "all", name: "All" },
+            { id: "none", name: "None" },
+            ...Array.from(districts, ([id, name]) => ({ id, name }))
+                .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+        ];
+    }, [props.routes]);
+    const activeDistrictFilter = districtFilters.some(filter => filter.id === districtFilter) ? districtFilter : "all";
+    useEffect(() => {
+        if (districtFilter !== activeDistrictFilter) setDistrictFilter(activeDistrictFilter);
+    }, [districtFilter, activeDistrictFilter]);
     const [renameNameDraft, setRenameNameDraft] = useState(selectedRoute?.input || "");
     const editRouteId = props.reviewRouteId || props.selectedRouteId;
     const hasSelection = !!selectedRoute;
@@ -45,9 +60,11 @@ export function ManageRoutesContent(props: ManageRoutesContentProps) {
         ? "This route has 1 waypoint anchor on a missing road segment. Clean up that waypoint before manipulating it."
         : `This route has ${orphanWaypointCount} waypoint anchors on missing road segments. Clean up those waypoints before manipulating it.`;
     const savedRouteInputs = props.routes.map((route) => route.routeCode || route.input || "").filter(Boolean);
-    const filteredRoutes = renameMode || routeListFilter === "All"
-        ? props.routes
-        : props.routes.filter((route) => routePrefix(route) === routeListFilter);
+    const filteredRoutes = renameMode
+        ? props.routes.filter(route => activeDistrictFilter === "all"
+            || (activeDistrictFilter === "none" ? (route.districts?.length ?? 0) === 0
+                : route.districts?.some(district => district.id === activeDistrictFilter)))
+        : routeListFilter === "All" ? props.routes : props.routes.filter(route => routePrefix(route) === routeListFilter);
     const canReapply = hasSelection && (!renameMode || renameNameDraft.trim().length > 0);
     const deleteSelectedRoute = () => {
         if (selectedRoute) {
@@ -99,6 +116,17 @@ export function ManageRoutesContent(props: ManageRoutesContentProps) {
             </div>
 
             <FocusDisabled>
+                {renameMode && <Scrollable horizontal={true} vertical={false} trackVisibility="scrollable" className={styles.districtFilterScroll}>
+                    <div className={styles.routeFilterRow}>
+                        {districtFilters.map(filter => (
+                            <Button key={filter.id} variant="flat" focusKey={FOCUS_AUTO}
+                                className={`${styles.routeFilterChip} ${styles.districtFilterChip} ${activeDistrictFilter === filter.id ? styles.routeFilterChipSelected : ""}`}
+                                onSelect={() => setDistrictFilter(filter.id)}>
+                                {filter.name}
+                            </Button>
+                        ))}
+                    </div>
+                </Scrollable>}
                 {!renameMode && <div className={styles.routeFilterRow}>
                     {ROUTE_LIST_FILTERS.map((filter) => (
                         <Button

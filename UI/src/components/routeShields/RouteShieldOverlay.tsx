@@ -1,14 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useValue } from "cs2/api";
+import { useRem } from "cs2/utils";
 import { routeShieldOverlays$ } from "bindings";
 import { RouteShieldOverlayItem } from "types";
 import { RouteShieldArtwork } from "./RouteShieldPreview";
 import { findShieldDefinition, useRouteShieldCatalog } from "./shieldCatalog";
 import styles from "./routeShieldOverlay.module.scss";
+import { isAustralianRectangle, rectangleWidth, selectNonOverlappingShields } from "./routeShieldLayout";
+
+const MemoizedArtwork = React.memo(RouteShieldArtwork);
 
 export function RouteShieldOverlay() {
     const shields = useValue(routeShieldOverlays$);
     const shieldCatalog = useRouteShieldCatalog();
+    const rem = useRem();
+    const visibleShields = useMemo(() => selectNonOverlappingShields(shields, shieldCatalog, rem), [shields, shieldCatalog, rem]);
     const [cameraMoving, setCameraMoving] = useState(true);
     const settleTimer = useRef<number | undefined>(undefined);
     const positionSignature = useMemo(
@@ -38,7 +44,7 @@ export function RouteShieldOverlay() {
 
     return (
         <div className={`${styles.overlay} ${cameraMoving ? styles.cameraMoving : ""}`} aria-hidden={true}>
-            {shields.map((shield) => <RouteShield key={shield.id} shield={shield} catalog={shieldCatalog} />)}
+            {visibleShields.map((shield) => <RouteShield key={shield.id} shield={shield} catalog={shieldCatalog} />)}
         </div>
     );
 }
@@ -46,13 +52,12 @@ export function RouteShieldOverlay() {
 function RouteShield({ shield, catalog }: { shield: RouteShieldOverlayItem; catalog: ReturnType<typeof useRouteShieldCatalog> }) {
     const presetScale = Number.isFinite(shield.scale) ? shield.scale : 1;
     if (isAustralianRectangle(shield.style)) {
-        const rectangleWidth = Math.max(42, shield.label.length * 11 + 18);
         return (
             <div
                 className={`${styles.shield} ${styles.rectangle} ${shield.occluded ? styles.occluded : ""}`}
                 style={{
                     transform: `translate(${shield.left}px, ${shield.top}px) translate(-50%, -50%) scale(${presetScale})`,
-                    width: `${rectangleWidth}rem`,
+                    width: `${rectangleWidth(shield.label)}rem`,
                 }}
             >
                 <div className={styles.label}>{shield.label}</div>
@@ -65,6 +70,8 @@ function RouteShield({ shield, catalog }: { shield: RouteShieldOverlayItem; cata
         return null;
     }
 
+    const surfaceScale = resolveWorldSurfaceScale(presetScale);
+
     return (
         <div
             className={`${styles.shield} ${shield.occluded ? styles.occluded : ""}`}
@@ -74,14 +81,11 @@ function RouteShield({ shield, catalog }: { shield: RouteShieldOverlayItem; cata
                 transform: `translate(${shield.left}px, ${shield.top}px) translate(-50%, -50%) scale(${presetScale})`,
             }}
         >
-            <RouteShieldArtwork definition={definition} routeCode={shield.label} />
+            <MemoizedArtwork definition={definition} routeCode={shield.label} surfaceScale={surfaceScale} />
         </div>
     );
 }
 
-function isAustralianRectangle(style: string): boolean {
-    return style === "AustralianARectangle"
-        || style === "AustralianMRectangle"
-        || style === "AustralianBRectangle"
-        || style === "AustralianCRectangle";
+function resolveWorldSurfaceScale(displayScale: number): 2 | 3 {
+    return displayScale > 1 ? 3 : 2;
 }

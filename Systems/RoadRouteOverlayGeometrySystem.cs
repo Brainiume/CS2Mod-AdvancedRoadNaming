@@ -23,6 +23,15 @@ namespace AdvancedRoadNaming.Systems
         private readonly List<RouteOverlayGeometryGroup> _managedRouteGroups = new List<RouteOverlayGeometryGroup>();
         private readonly List<RouteOverlayGeometryGroup> _managedRouteGroupPool = new List<RouteOverlayGeometryGroup>();
 
+        private readonly RouteGeometryCache _activeGeometry = new RouteGeometryCache();
+        private readonly RouteGeometryCache _savedGeometry = new RouteGeometryCache();
+        private readonly RouteGeometryCache _previewGeometry = new RouteGeometryCache();
+        private RoadNetworkRevisionSystem _network;
+        private long _lastManagedNetworkRevision = -1;
+        private long _lastHoverNetworkRevision = -1;
+        private Entity _lastHover;
+        private int _hiddenWaypointIndex = -1;
+        private bool _hadGeometry;
         private RoadRouteToolSystem _toolSystem;
         private SegmentMetadataSystem _metadataSystem;
         private int _lastManageOverlayVersion = -1;
@@ -41,23 +50,44 @@ namespace AdvancedRoadNaming.Systems
             base.OnCreate();
             _toolSystem = World.GetOrCreateSystemManaged<RoadRouteToolSystem>();
             _metadataSystem = World.GetOrCreateSystemManaged<SegmentMetadataSystem>();
+            _network = World.GetOrCreateSystemManaged<RoadNetworkRevisionSystem>();
         }
 
         protected override void OnUpdate()
         {
             if (_toolSystem == null || !_toolSystem.IsRunning)
             {
-                ClearAll();
+                if (_hadGeometry) ClearAll();
+                _hadGeometry = false;
                 return;
             }
 
+            _hadGeometry = true;
             BuildManagedRouteGeometry();
-            RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, _toolSystem.SavedRoutePreviewSegments, _toolSystem.SavedRoutePreviewWaypoints, _savedRouteCurves, _savedRouteNodes);
-            RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, _toolSystem.SelectedSegments, _toolSystem.Waypoints, _activeCurves, _activeNodes);
-            HideActiveWaypointBeingMoved();
-
-            BuildPreviewGeometry();
+            UpdateGeometry(_savedGeometry, _toolSystem.SavedRoutePreviewSegments, _toolSystem.SavedRoutePreviewWaypoints, _savedRouteCurves, _savedRouteNodes);
+            var activeChanged = UpdateGeometry(_activeGeometry, _toolSystem.SelectedSegments, _toolSystem.Waypoints, _activeCurves, _activeNodes);
+            var hiddenIndex = _toolSystem.HasActiveMoveEdit ? _toolSystem.ActiveEditIndex : -1;
+            if (activeChanged || hiddenIndex != _hiddenWaypointIndex)
+            {
+                _hiddenWaypointIndex = hiddenIndex;
+                _activeNodes.Clear();
+                _activeNodes.AddRange(_activeGeometry.Nodes);
+                HideActiveWaypointBeingMoved();
+            }
+            UpdateGeometry(_previewGeometry, _toolSystem.PreviewSegments, _toolSystem.PreviewWaypoints, _previewCurves, _previewNodes);
             BuildHoverGeometry();
+        }
+
+        private bool UpdateGeometry(RouteGeometryCache cache, IReadOnlyList<Entity> segments,
+            IReadOnlyList<RoadRouteWaypoint> waypoints, List<Bezier4x3> curves, List<float3> nodes)
+        {
+            if (!cache.Update(EntityManager, segments, waypoints, _network.Revision))
+                return false;
+            curves.Clear();
+            curves.AddRange(cache.Curves);
+            nodes.Clear();
+            nodes.AddRange(cache.Nodes);
+            return true;
         }
 
         private void BuildManagedRouteGeometry()
@@ -74,11 +104,13 @@ namespace AdvancedRoadNaming.Systems
                 return;
             }
 
-            if (_lastManageOverlayVersion == _toolSystem.ManageOverlayVersion)
+            if (_lastManageOverlayVersion == _toolSystem.ManageOverlayVersion
+                && _lastManagedNetworkRevision == _network.Revision)
                 return;
 
             ClearManagedRouteGroups();
             _lastManageOverlayVersion = _toolSystem.ManageOverlayVersion;
+            _lastManagedNetworkRevision = _network.Revision;
 
             foreach (var route in _metadataSystem.RouteDatabase.Routes)
             {
@@ -167,33 +199,26 @@ namespace AdvancedRoadNaming.Systems
             _activeNodes.RemoveAt(activeEditIndex);
         }
 
-        private void BuildPreviewGeometry()
-        {
-            _previewCurves.Clear();
-            _previewNodes.Clear();
-
-            var previewSegments = _toolSystem.PreviewSegments;
-            if (previewSegments == null || previewSegments.Count == 0)
-                return;
-
-            RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, previewSegments, _toolSystem.PreviewWaypoints, _previewCurves, _previewNodes);
-        }
-
         private void BuildHoverGeometry()
         {
+            var hover = _toolSystem.PreviewSegments.Count > 0 ? Entity.Null : _toolSystem.HoveredSegment;
+            if (_lastHover == hover && _lastHoverNetworkRevision == _network.Revision)
+                return;
+            _lastHover = hover;
+            _lastHoverNetworkRevision = _network.Revision;
             _hoverCurves.Clear();
-            if (_toolSystem.HoveredSegment == Entity.Null)
-                return;
-
-            var previewSegments = _toolSystem.PreviewSegments;
-            if (previewSegments != null && previewSegments.Count > 0)
-                return;
-
-            RouteOverlayGeometryBuilder.BuildHoverGeometry(EntityManager, _toolSystem.HoveredSegment, _hoverCurves);
+            if (hover != Entity.Null)
+                RouteOverlayGeometryBuilder.BuildHoverGeometry(EntityManager, hover, _hoverCurves);
         }
 
         private void ClearAll()
         {
+            _activeGeometry.Clear();
+            _savedGeometry.Clear();
+            _previewGeometry.Clear();
+            _lastManagedNetworkRevision = -1;
+            _lastHoverNetworkRevision = -1;
+            _hiddenWaypointIndex = -1;
             _activeCurves.Clear();
             _activeNodes.Clear();
             _previewCurves.Clear();

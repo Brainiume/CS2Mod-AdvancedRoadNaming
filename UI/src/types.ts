@@ -127,6 +127,7 @@ export interface SavedRoute {
     endRoadName?: string;
     derivedDisplayCorridor?: string;
     districtSummary?: string;
+    districts?: { id: string; name: string }[];
     subtitle?: string;
     updated: string;
 }

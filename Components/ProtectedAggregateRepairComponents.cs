@@ -26,6 +26,7 @@ namespace AdvancedRoadNaming.Components
     {
         public Entity Original;
         public Entity Replacement;
+        public Colossal.Mathematics.Bezier4x3 OriginalCurve;
     }
 
     public struct AdvancedRoadNamingAggregateRepairRuntime : IComponentData

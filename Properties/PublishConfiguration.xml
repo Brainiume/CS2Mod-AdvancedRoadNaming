@@ -4,42 +4,58 @@
 	<!--Name of the mod to display to players-->
 	<DisplayName Value="Advanced Road Naming [BETA]" />
 	<!--Short description of the mod-->
-	<ShortDescription Value="Advanced segment based road naming" />
+	<ShortDescription Value="Segment-based road renaming, saved route designations, route shields and traffic statistics." />
 	<!--Long description of the mod. Single line or multi line. Supports minimal markdown subset-->
 	<!--LongDescription Value="This is a long description" /-->
 	<LongDescription>
-# Overview
-This mod focuses on segment-based road editing. Instead of changing every road with the same name, it lets you select an exact path of connected road segments and apply changes only to that chosen route.
-The main goal is to give players more control over road naming, since the base game implementation is fairly limited. As a bonus, the mod also supports route designations, making it easy to add route names to highways, arterials, bypasses, and other road corridors.
-		
-The mod currently has two main modes, both of which can be accessed by clicking on a road segment.
+		# Advanced Road Naming
 
-# Road Route Naming
-This mode lets you assign major route numbers, such as A1, M2, or A8, to a selected road corridor. The original street names remain intact, but the chosen segments gain the route designation. This makes it possible to build routes across multiple streets without renaming the roads themselves, while avoiding unwanted parts of a road receiving the route number.
+		# Main Features
+		- Rename only the selected segments of a road.
+		- Assign route designations such as A1, M2, I-23 or Route 10 while preserving base names.
 
-# Road Renaming
-This mode lets you rename only the specific road segments you select. That means you can create custom named road corridors without accidentally renaming the entire vanilla-defined “connected” road.
 
-# Road Name Persistence
-Updating roads near renamed roads using this mod may cause the naming to be overridden by the game.
+		# Route Shields
+		Display customisable route shields periodically along saved routes.
 
-The mod does its best to ensure your name changes persist after the road is updated, such as when a new intersection is created on that road or the road is replaced with a different type.
+		- Choose from more than 20 bundled shield designs covering Australia, New Zealand, North America, Europe, Asia and Africa.
+		- Configure shield visibility, size and spacing.
+		- Import your own SVG shields from the Advanced Road Naming ModsData folder.
+		- Use the included Route Shield Designer to configure custom route text, positioning, colours and more.
 
-If the mod cannot preserve your naming, you can simply use it again to apply the desired road name or route designation.
+		Custom route shield importing and the designer are still works in progress.
 
-# Credits
+		# Route Statistics
+		Saved routes can show traffic volume and traffic flow information. (Calculations only run when Statistics page is open)
 
-- krzychu124 - Gave insights into how the aggregate system worked, and how to persist changes.
-- Bruceyboy24804 - Improving Json code.
+		# Configurability
+		Use the settings page to configure various behaviours and if desired disable features
 
-# Compatibility
+		# Persistence and Network Changes
+		The mod stores saved routes and segment information in your save and attempts to preserve custom names and designations when roads are upgraded, split or connected to new intersections.
 
-- Works with Road Name Remover
+		The base game can rebuild its own road aggregates after some network changes. If a name or designation is displaced, use Reapply or Rebuild from the saved route manager. Name persistence continues to be improved.
+
+		# Credits
+
+		- krzychu124 - Gave insights into how the aggregate system worked, and how to persist changes.
+		- Bruceyboy24804 - Improving Json code.
+		- River Mochi - Providing implementation insights into settings information/tool tip colour formatting
+
+		# Compatibility
+
+		- Works with Road Name Remover
+		- Works with City Watchdog; Road Name Hiding Functionality
 	</LongDescription>
 	<!--Thumbnail-->
 	<Thumbnail Value="Properties/Thumbnail.png" />
 	<!--Screenshot, can be set multiple times-->
 	<Screenshot Value="Properties/Screenshots/10Thumbnail.png" />
+	<Screenshot Value="Properties/Screenshots/11Renaming.png" />
+	<Screenshot Value="Properties/Screenshots/12RoadRoutes.png" />
+	<Screenshot Value="Properties/Screenshots/13RouteShields.png" />
+	<Screenshot Value="Properties/Screenshots/14Statistics.png" />
+	<Screenshot Value="Properties/Screenshots/15ShieldDesigner.png" />
 	<Screenshot Value="Properties/Screenshots/20Before.png" />
 	<Screenshot Value="Properties/Screenshots/30During.png" />
 	<Screenshot Value="Properties/Screenshots/40After.png" />
@@ -48,7 +64,7 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!--Link to the forum post where the mod can be discussed-->
 	<ForumLink Value="https://forum.paradoxplaza.com/forum/threads/advanced-road-naming-beta-mod.1924656/" />
 	<!--Version of the mod-->
-	<ModVersion Value="0.2.3.1" />
+	<ModVersion Value="0.2.4" />
 	<!--Recommended version of the base game to use the mod-->
 	<GameVersion Value="1.6.*" />
 	<!--Dependency for the mod, can be set multiple times-->
@@ -57,17 +73,18 @@ If the mod cannot preserve your naming, you can simply use it again to apply the
 	<!-- No required DLC. -->
 	<!--Change log for new version. Single line or multi line. Supports minimal markdown subset-->
 	<ChangeLog Value="
-Saved Rename Routes
-- Fixed Delete button not correctly positioned in UI
-
-Route Shields
-- Added Thailand Route shields and German Federal Road Shield
-- Added button in mod settings which opens ModData folder where custom route shields can be added
-- Added button in mod settings which opens the Route Shield Designer in default web browser
-- Route Shield Designer now has an `Apply Changes` button which updates the JSON file being configured
-
-Known Issues
-- Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
+		- Improved performance when selecting, editing, and previewing routes.
+		- Reduced unnecessary background processing and UI updates.
+		- Improved responsiveness when managing large numbers of saved routes.
+		- Fixed route shields bunching together or appearing unevenly spaced.
+		- Improved shield placement around bends, junctions, and route endpoints.
+		- Added overlap prevention to keep shields readable at different zoom levels and UI scales.
+		- Prevented duplicate shields while editing saved routes.
+		- Improved route updates after roads are changed or a city is loaded.
+		- Formatted settings option descriptions with colours
+		
+		Known Issues
+		- Renamed roads can sometimes still be overridden by road geometry changes / updates eg. using Traffic to change lanes and, adding, manipulating or removing road segments. Name persistence is still being improved.
 	" />
 	<!--<ChangeLog>
 	</ChangeLog>-->

@@ -7,19 +7,32 @@ import overlayStyles from "./routeShieldOverlay.module.scss";
 interface ArtworkProps {
     definition: RouteShieldDefinition;
     routeCode: string;
+    layoutScale?: number;
+    surfaceScale?: number;
 }
 
-export function RouteShieldArtwork({ definition, routeCode }: ArtworkProps) {
+const PREVIEW_SURFACE_SCALE = 2;
+
+export function RouteShieldArtwork({ definition, routeCode, layoutScale = 1, surfaceScale = 1 }: ArtworkProps) {
+    const layoutWidth = definition.widthRem * layoutScale;
+    const layoutHeight = definition.heightRem * layoutScale;
+    const surfaceWidth = layoutWidth * surfaceScale;
+    const surfaceHeight = layoutHeight * surfaceScale;
+
     return (
         <div
             className={overlayStyles.artwork}
-            style={{ width: `${definition.widthRem}rem`, height: `${definition.heightRem}rem` }}
+            style={{ width: `${layoutWidth}rem`, height: `${layoutHeight}rem` }}
         >
             <img
                 className={overlayStyles.body}
                 src={`${definition.assetRoot}${definition.asset}`}
-                width="100%"
-                height="100%"
+                style={{
+                    width: `${surfaceWidth}rem`,
+                    height: `${surfaceHeight}rem`,
+                    transform: `scale(${1 / surfaceScale})`,
+                    transformOrigin: "0 0",
+                }}
                 alt=""
             />
             {definition.textLayers.map((layer) => (
@@ -28,8 +41,8 @@ export function RouteShieldArtwork({ definition, routeCode }: ArtworkProps) {
                     className={overlayStyles.textLayer}
                     style={{
                         color: layer.color,
-                        fontSize: `${layer.fontSizeRem}rem`,
-                        transform: `translate(${layer.offsetXRem}rem, ${layer.offsetYRem}rem) scale(${layer.scalePercent / 100}) rotate(${layer.rotationDegrees}deg)`,
+                        fontSize: `${layer.fontSizeRem * layoutScale}rem`,
+                        transform: `translate(${layer.offsetXRem * layoutScale}rem, ${layer.offsetYRem * layoutScale}rem) scale(${layer.scalePercent / 100}) rotate(${layer.rotationDegrees}deg)`,
                     }}
                 >
                     {resolveShieldLayerText(layer, routeCode)}
@@ -47,11 +60,26 @@ export function RouteShieldPreview({ definition, routeCode, compact = false }: A
 
     const frameWidth = compact ? 52 : 72;
     const frameHeight = compact ? 44 : 54;
-    const scale = Math.min(frameWidth / definition.widthRem, frameHeight / definition.heightRem);
+    const fitScale = Math.min(frameWidth / definition.widthRem, frameHeight / definition.heightRem);
+    const finalWidth = definition.widthRem * fitScale;
+    const finalHeight = definition.heightRem * fitScale;
     return (
         <div className={`${browserStyles.previewFrame} ${compact ? browserStyles.previewFrameCompact : ""}`}>
-            <div className={browserStyles.previewCanvas} style={{ transform: `translate(-50%, -50%) scale(${scale})` }}>
-                <RouteShieldArtwork definition={definition} routeCode={routeCode} />
+            <div
+                className={browserStyles.previewCanvas}
+                style={{
+                    left: `${(frameWidth - finalWidth) / 2}rem`,
+                    top: `${(frameHeight - finalHeight) / 2}rem`,
+                    width: `${finalWidth}rem`,
+                    height: `${finalHeight}rem`,
+                }}
+            >
+                <RouteShieldArtwork
+                    definition={definition}
+                    routeCode={routeCode}
+                    layoutScale={fitScale}
+                    surfaceScale={PREVIEW_SURFACE_SCALE}
+                />
             </div>
         </div>
     );

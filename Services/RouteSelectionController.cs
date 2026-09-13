@@ -19,6 +19,9 @@ namespace AdvancedRoadNaming.Services
 
         private WaypointEditMode _activeEditMode;
         private int _activeEditIndex = -1;
+        private bool _hoverInvalidated = true;
+        private bool _lastAllowRouteEditSnap;
+        private long _networkRevision = -1;
 
         public RouteSelectionController(SegmentValidationService validation, RoadNetworkPathingService pathing)
         {
@@ -60,11 +63,15 @@ namespace AdvancedRoadNaming.Services
 
         public void SetHovered(Entity entity)
         {
+            RefreshNetwork();
+            if (!_hoverInvalidated && HoveredSegment == entity && !HoveredWaypoint.HasValue)
+                return;
             HoveredSegment = entity;
             HoveredWaypoint = null;
             HoveredWaypointIndex = -1;
             HoveredInsertionIndex = -1;
             RebuildPreviewState();
+            _hoverInvalidated = false;
         }
 
         public void SetHovered(RoadRouteWaypoint waypoint)
@@ -74,11 +81,28 @@ namespace AdvancedRoadNaming.Services
 
         public void SetHovered(RoadRouteWaypoint waypoint, bool allowRouteEditSnap)
         {
+            RefreshNetwork();
+            if (!_hoverInvalidated && _lastAllowRouteEditSnap == allowRouteEditSnap
+                && HoveredWaypoint.HasValue && RouteGeometryCache.SameWaypoint(HoveredWaypoint.Value, waypoint))
+                return;
+            _lastAllowRouteEditSnap = allowRouteEditSnap;
             HoveredSegment = waypoint.Segment;
             HoveredWaypoint = waypoint;
             HoveredWaypointIndex = allowRouteEditSnap ? FindHoveredWaypointIndex(waypoint) : -1;
             HoveredInsertionIndex = allowRouteEditSnap && HoveredWaypointIndex < 0 ? FindHoveredInsertionIndex(waypoint) : -1;
             RebuildPreviewState();
+            _hoverInvalidated = false;
+        }
+
+        private void RefreshNetwork()
+        {
+            var revision = _pathing.Revision;
+            if (_networkRevision == revision)
+                return;
+            _networkRevision = revision;
+            _hoverInvalidated = true;
+            if (_waypoints.Count > 0)
+                RebuildSelectedSegmentsFromWaypoints();
         }
 
         public bool TryBeginEditFromHover()
@@ -204,6 +228,7 @@ namespace AdvancedRoadNaming.Services
 
             if (_waypoints.Count == 0)
             {
+                _hoverInvalidated = true;
                 _waypoints.Add(waypoint);
                 _selectedSegments.Clear();
                 AppendSegmentIfMissing(_selectedSegments, waypoint.Segment);
@@ -249,6 +274,7 @@ namespace AdvancedRoadNaming.Services
 
         public void Clear()
         {
+            _hoverInvalidated = true;
             Warning = null;
             HoveredSegment = Entity.Null;
             HoveredWaypoint = null;
@@ -263,6 +289,7 @@ namespace AdvancedRoadNaming.Services
 
         public void LoadRoute(IReadOnlyList<RoadRouteWaypoint> waypoints, IReadOnlyList<Entity> segments)
         {
+            _hoverInvalidated = true;
             Warning = null;
             HoveredSegment = Entity.Null;
             HoveredWaypoint = null;
@@ -368,6 +395,7 @@ namespace AdvancedRoadNaming.Services
                 return false;
             }
 
+            _hoverInvalidated = true;
             appendedSegmentDelta = candidateSegments.Count - _selectedSegments.Count;
             _waypoints.Clear();
             _waypoints.AddRange(candidateWaypoints);
@@ -380,6 +408,7 @@ namespace AdvancedRoadNaming.Services
 
         private void RebuildPreviewState()
         {
+            _hoverInvalidated = true;
             _previewSegments.Clear();
             _previewWaypoints.Clear();
 

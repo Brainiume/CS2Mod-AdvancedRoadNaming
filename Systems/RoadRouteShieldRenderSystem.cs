@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using AdvancedRoadNaming.Domain;
 using AdvancedRoadNaming.Services;
 using Colossal.Mathematics;
+using Colossal.Serialization.Entities;
 using Colossal.UI.Binding;
+using Game;
 using Game.Buildings;
 using Game.Common;
 using Game.Rendering;
@@ -18,7 +20,6 @@ namespace AdvancedRoadNaming.Systems
     public sealed partial class RoadRouteShieldUISystem : UISystemBase
     {
         private const string BindingGroup = "AdvancedRoadNaming";
-        private const int GeometryRefreshIntervalFrames = 128;
         private const int MaxVisibleShields = 256;
         private const float MinCameraDistance = 45f;
         private const float MaxCameraDistance = 5000f;
@@ -37,8 +38,30 @@ namespace AdvancedRoadNaming.Systems
         private readonly List<float3> _scratchNodes = new List<float3>(32);
         private readonly List<OcclusionCandidate> _occlusionCandidates = new List<OcclusionCandidate>(256);
         private readonly List<int> _pendingOcclusionAnchors = new List<int>(MaxOcclusionChecksPerFrame);
-        private readonly Dictionary<int, OcclusionCacheEntry> _occlusionCache = new Dictionary<int, OcclusionCacheEntry>(256);
-        private readonly object _raycastContext = new object();
+        private Dictionary<int, OcclusionCacheEntry> _occlusionCache = new Dictionary<int, OcclusionCacheEntry>(256);
+        private Dictionary<int, OcclusionCacheEntry> _retainedOcclusion = new Dictionary<int, OcclusionCacheEntry>();
+        private readonly Dictionary<(long, int), RouteShieldAnchor> _previousAnchors = new Dictionary<(long, int), RouteShieldAnchor>();
+        private readonly RouteGeometryCache _activeGeometry = new RouteGeometryCache();
+        private readonly RouteCurveSampler _sampler = new RouteCurveSampler();
+        private readonly List<float3> _anchorPositions = new List<float3>();
+        private readonly List<VisibleRouteShield> _published = new List<VisibleRouteShield>();
+        private RoadNetworkRevisionSystem _network;
+        private long _lastNetworkRevision = -1;
+        private (bool, long, RouteShieldStyle, string, string, long) _lastActiveRouteState;
+        private int _nextAnchorId;
+        private int _geometryGeneration;
+        private int _pendingGeometryGeneration = -1;
+        private bool _projectionDirty = true;
+        private Matrix4x4 _lastViewMatrix;
+        private Matrix4x4 _lastProjectionMatrix;
+        private int _lastScreenWidth;
+        private int _lastScreenHeight;
+        private float _lastCameraZoom;
+        private RouteShieldSizePreset _lastSizePreset;
+        private bool _lastOcclusionEnabled;
+        private int _lastOcclusionAngle;
+        private float _nextProjectionRefresh;
+        private object _raycastContext = new object();
 
         private SegmentMetadataSystem _metadataSystem;
         private RoadRouteToolSystem _toolSystem;
@@ -48,9 +71,7 @@ namespace AdvancedRoadNaming.Systems
         private int _lastRouteDatabaseVersion = -1;
         private int _lastImportCatalogVersion = -1;
         private RouteShieldSpacingPreset _lastSpacingPreset = RouteShieldSpacingPreset.Moderate;
-        private int _lastActiveRouteSignature;
         private bool _lastEnabled;
-        private int _refreshCountdown;
         private int _raycastSubmittedFrame = -1;
         private int _cameraGeneration;
         private int _pendingCameraGeneration = -1;
@@ -64,6 +85,7 @@ namespace AdvancedRoadNaming.Systems
             base.OnCreate();
             _metadataSystem = World.GetOrCreateSystemManaged<SegmentMetadataSystem>();
             _toolSystem = World.GetOrCreateSystemManaged<RoadRouteToolSystem>();
+            _network = World.GetOrCreateSystemManaged<RoadNetworkRevisionSystem>();
             _raycastSystem = World.GetOrCreateSystemManaged<RaycastSystem>();
             _cameraUpdateSystem = World.GetExistingSystemManaged<CameraUpdateSystem>();
             AddBinding(_overlayBinding = new RawValueBinding(BindingGroup, "routeShieldOverlays", WriteOverlays));
@@ -71,178 +93,145 @@ namespace AdvancedRoadNaming.Systems
 
         protected override void OnUpdate()
         {
-            var enabled = Mod.Settings?.EnableRouteShields == true;
-            var spacingPreset = Mod.Settings?.RouteShieldSpacingPreset ?? RouteShieldSpacingPreset.Moderate;
-            var databaseVersion = _metadataSystem?.RouteDatabase?.Version ?? -1;
-            var importCatalogVersion = RouteShieldImportCatalog.Version;
-            var activeRouteSignature = BuildActiveRouteSignature();
-
-            _refreshCountdown--;
+            ConsumeOcclusionResults();
+            var enabled = Mod.Settings?.EnableRouteShields == true && _overlayBinding.active;
             if (!enabled)
             {
-                if (_anchors.Count != 0 || _visible.Count != 0)
+                if (_lastEnabled)
                 {
                     _anchors.Clear();
                     _visible.Clear();
-                    ClearOcclusionState();
-                    _overlayBinding.Update();
+                    _occlusionCache.Clear();
+                    _geometryGeneration++;
+                    _activeGeometry.Clear();
+                    PublishIfChanged();
                 }
-
                 _lastEnabled = false;
-                _lastRouteDatabaseVersion = databaseVersion;
-                _lastImportCatalogVersion = importCatalogVersion;
-                _lastSpacingPreset = spacingPreset;
-                _lastActiveRouteSignature = activeRouteSignature;
                 return;
             }
 
-            var geometryChanged = !_lastEnabled
-                || _lastRouteDatabaseVersion != databaseVersion
-                || _lastImportCatalogVersion != importCatalogVersion
-                || _lastSpacingPreset != spacingPreset
-                || _lastActiveRouteSignature != activeRouteSignature
-                || _refreshCountdown <= 0;
-            if (geometryChanged)
+            var spacingPreset = Mod.Settings.RouteShieldSpacingPreset;
+            var databaseVersion = _metadataSystem.RouteDatabase.Version;
+            var importVersion = RouteShieldImportCatalog.Version;
+            var active = IsActiveRouteVisible();
+            if (active)
+                _activeGeometry.Update(EntityManager, _toolSystem.SelectedSegments, _toolSystem.Waypoints, _network.Revision);
+            var activeState = (active, active ? _activeGeometry.Version : 0L, _toolSystem.RouteShieldStyle,
+                _toolSystem.RouteShieldImportId ?? string.Empty, _toolSystem.InputText ?? string.Empty,
+                _toolSystem.SavedRouteManipulateMode ? _toolSystem.SelectedSavedRouteId : 0L);
+            if (!_lastEnabled || databaseVersion != _lastRouteDatabaseVersion || importVersion != _lastImportCatalogVersion
+                || spacingPreset != _lastSpacingPreset || _network.Revision != _lastNetworkRevision
+                || !_lastActiveRouteState.Equals(activeState))
             {
                 RebuildAnchors(spacingPreset);
-                ClearOcclusionState();
-                _lastEnabled = true;
                 _lastRouteDatabaseVersion = databaseVersion;
-                _lastImportCatalogVersion = importCatalogVersion;
+                _lastImportCatalogVersion = importVersion;
                 _lastSpacingPreset = spacingPreset;
-                _lastActiveRouteSignature = activeRouteSignature;
-                _refreshCountdown = GeometryRefreshIntervalFrames;
+                _lastNetworkRevision = _network.Revision;
+                _lastActiveRouteState = activeState;
+                _lastEnabled = true;
+                _projectionDirty = true;
             }
-
-            ConsumeOcclusionResults();
             ProjectVisibleAnchors();
-            _overlayBinding.Update();
+            PublishIfChanged();
         }
 
-        private int BuildActiveRouteSignature()
+        protected override void OnGamePreload(Purpose purpose, GameMode mode)
         {
-            if (_toolSystem == null
-                || !_toolSystem.IsRunning
-                || _toolSystem.Mode != RoadRouteToolMode.AssignMajorRouteNumber
-                || _toolSystem.SavedRoutesViewActive
-                || !IsSupportedStyle(_toolSystem.RouteShieldStyle, _toolSystem.RouteShieldImportId))
-            {
-                return 0;
-            }
+            base.OnGamePreload(purpose, mode);
+            _anchors.Clear();
+            _visible.Clear();
+            _activeGeometry.Clear();
+            _occlusionCache.Clear();
+            _retainedOcclusion.Clear();
+            _previousAnchors.Clear();
+            _pendingOcclusionAnchors.Clear();
+            _raycastContext = new object();
+            _raycastSubmittedFrame = -1;
+            _pendingGeometryGeneration = -1;
+            _geometryGeneration++;
+            _lastEnabled = false;
+            _hasCameraState = false;
+            _projectionDirty = true;
+            PublishIfChanged();
+        }
 
-            unchecked
-            {
-                var hash = 17;
-                hash = hash * 31 + _toolSystem.SelectedSegments.Count;
-                hash = hash * 31 + _toolSystem.WaypointCount;
-                hash = hash * 31 + (int)_toolSystem.RouteShieldStyle;
-                hash = hash * 31 + (_toolSystem.RouteShieldImportId ?? string.Empty).GetHashCode();
-                hash = hash * 31 + (_toolSystem.InputText ?? string.Empty).GetHashCode();
-                return hash;
-            }
+        private bool IsActiveRouteVisible() => _toolSystem != null && _toolSystem.IsRunning
+            && _toolSystem.Mode == RoadRouteToolMode.AssignMajorRouteNumber && !_toolSystem.SavedRoutesViewActive
+            && _toolSystem.SelectedSegments.Count > 0
+            && IsSupportedStyle(_toolSystem.RouteShieldStyle, _toolSystem.RouteShieldImportId);
+
+        private void PublishIfChanged()
+        {
+            var changed = _published.Count != _visible.Count;
+            for (var i = 0; !changed && i < _visible.Count; i++)
+                changed = !_visible[i].Equals(_published[i]);
+            if (!changed) return;
+            _published.Clear();
+            _published.AddRange(_visible);
+            _overlayBinding.Update();
         }
 
         private void RebuildAnchors(RouteShieldSpacingPreset spacingPreset)
         {
+            _previousAnchors.Clear();
+            foreach (var anchor in _anchors)
+                _previousAnchors[(anchor.RouteId, anchor.Ordinal)] = anchor;
             _anchors.Clear();
-            if (_metadataSystem == null)
-                return;
-
+            _retainedOcclusion.Clear();
             var spacing = ResolveSpacing(spacingPreset);
+            var active = IsActiveRouteVisible();
+            // Prefer the edit preview, and do not also draw its saved copy.
+            if (active)
+            {
+                var routeId = _toolSystem.SavedRouteManipulateMode ? _toolSystem.SelectedSavedRouteId : 0L;
+                AddRouteAnchors(routeId, _toolSystem.RouteShieldStyle, _toolSystem.RouteShieldImportId,
+                    BuildShieldLabel(_toolSystem.RouteShieldStyle, _toolSystem.InputText), spacing, _activeGeometry.Curves);
+            }
             foreach (var route in _metadataSystem.RouteDatabase.Routes)
             {
-                if (route == null
-                    || route.IsDeleted
-                    || route.Mode != RoadRouteToolMode.AssignMajorRouteNumber
-                    || !IsSupportedStyle(route.RouteShieldStyle, route.RouteShieldImportId)
-                    || route.OrderedSegmentIds.Count == 0)
-                {
+                if (route == null || route.IsDeleted || route.Mode != RoadRouteToolMode.AssignMajorRouteNumber
+                    || !IsSupportedStyle(route.RouteShieldStyle, route.RouteShieldImportId) || route.OrderedSegmentIds.Count == 0
+                    || (active && _toolSystem.SavedRouteManipulateMode && route.RouteId == _toolSystem.SelectedSavedRouteId))
                     continue;
-                }
-
                 RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, route.OrderedSegmentIds, route.Waypoints, _scratchCurves, _scratchNodes);
-                if (_scratchCurves.Count == 0)
-                    continue;
-
-                AddRouteAnchors(route.RouteShieldStyle, route.RouteShieldImportId, BuildShieldLabel(route.RouteShieldStyle, route.RouteCode ?? route.BaseInputValue), spacing);
+                AddRouteAnchors(route.RouteId, route.RouteShieldStyle, route.RouteShieldImportId,
+                    BuildShieldLabel(route.RouteShieldStyle, route.RouteCode ?? route.BaseInputValue), spacing, _scratchCurves);
             }
-
-            AddActiveRouteAnchors(spacing);
+            var oldCache = _occlusionCache;
+            _occlusionCache = _retainedOcclusion;
+            _retainedOcclusion = oldCache;
+            _retainedOcclusion.Clear();
+            _previousAnchors.Clear();
+            _geometryGeneration++;
         }
 
-        private void AddActiveRouteAnchors(float spacing)
+        private void AddRouteAnchors(long routeId, RouteShieldStyle style, string importId, string label,
+            float spacing, IReadOnlyList<Bezier4x3> curves)
         {
-            if (_toolSystem == null
-                || !_toolSystem.IsRunning
-                || _toolSystem.Mode != RoadRouteToolMode.AssignMajorRouteNumber
-                || _toolSystem.SavedRoutesViewActive
-                || !IsSupportedStyle(_toolSystem.RouteShieldStyle, _toolSystem.RouteShieldImportId)
-                || _toolSystem.SelectedSegments.Count == 0)
+            if (string.IsNullOrWhiteSpace(label) || curves.Count == 0) return;
+            _sampler.Rebuild(curves);
+            _sampler.Place(spacing, _anchorPositions);
+            for (var i = 0; i < _anchorPositions.Count; i++)
             {
-                return;
-            }
-
-            RouteOverlayGeometryBuilder.BuildRouteGeometry(EntityManager, _toolSystem.SelectedSegments, _toolSystem.Waypoints, _scratchCurves, _scratchNodes);
-            if (_scratchCurves.Count == 0)
-                return;
-
-            AddRouteAnchors(
-                _toolSystem.RouteShieldStyle,
-                _toolSystem.RouteShieldImportId,
-                BuildShieldLabel(_toolSystem.RouteShieldStyle, _toolSystem.InputText),
-                spacing);
-        }
-
-        private void AddRouteAnchors(RouteShieldStyle style, string importId, string label, float spacing)
-        {
-            if (string.IsNullOrWhiteSpace(label))
-                return;
-
-            var totalLength = 0f;
-            for (var i = 0; i < _scratchCurves.Count; i++)
-                totalLength += RouteOverlayMath.ApproximateLength(_scratchCurves[i]);
-
-            if (totalLength < 5f)
-                return;
-
-            if (totalLength < spacing * 0.75f)
-            {
-                AddAnchorAtDistance(style, importId, label, totalLength * 0.5f);
-                return;
-            }
-
-            for (var distance = spacing * 0.5f; distance < totalLength; distance += spacing)
-                AddAnchorAtDistance(style, importId, label, distance);
-        }
-
-        private void AddAnchorAtDistance(RouteShieldStyle style, string importId, string label, float targetDistance)
-        {
-            var walked = 0f;
-            for (var i = 0; i < _scratchCurves.Count; i++)
-            {
-                var curve = _scratchCurves[i];
-                var length = RouteOverlayMath.ApproximateLength(curve);
-                if (walked + length < targetDistance)
-                {
-                    walked += length;
-                    continue;
-                }
-
-                var localDistance = math.clamp(targetDistance - walked, 0f, length);
-                var t = RouteOverlayMath.ParameterAtDistance(curve, localDistance);
-                var position = MathUtils.Position(curve, t);
+                var position = _anchorPositions[i];
                 position.y += ShieldElevation;
-                _anchors.Add(new RouteShieldAnchor(NormalizeStyle(style), importId, label, position));
-                return;
+                var id = _previousAnchors.TryGetValue((routeId, i), out var previous) ? previous.Id : ++_nextAnchorId;
+                if (math.distancesq(previous.Position, position) < 0.000001f
+                    && _occlusionCache.TryGetValue(id, out var cached))
+                    _retainedOcclusion[id] = cached;
+                _anchors.Add(new RouteShieldAnchor(id, routeId, i, NormalizeStyle(style), importId, label, position));
             }
         }
 
         private void ProjectVisibleAnchors()
         {
-            _visible.Clear();
             var camera = Camera.main;
             if (camera == null || _anchors.Count == 0)
+            {
+                _visible.Clear();
                 return;
+            }
 
             var cameraPosition = camera.transform.position;
             var cameraZoom = _cameraUpdateSystem?.activeCameraController?.zoom
@@ -257,9 +246,31 @@ namespace AdvancedRoadNaming.Systems
             var angleThreshold = math.clamp(Mod.Settings?.RouteShieldOcclusionAngle ?? 30, 5, 60);
             var shouldCheckOcclusion = occlusionEnabled && cameraStable && cameraAngle <= angleThreshold;
 
-            _occlusionCandidates.Clear();
             var screenHeight = Screen.height;
             var screenWidth = Screen.width;
+            var sizePreset = Mod.Settings.RouteShieldSizePreset;
+            var viewMatrix = camera.worldToCameraMatrix;
+            var projectionMatrix = camera.projectionMatrix;
+            var now = UnityEngine.Time.unscaledTime;
+            if (!_projectionDirty && _lastViewMatrix.Equals(viewMatrix) && _lastProjectionMatrix.Equals(projectionMatrix)
+                && _lastScreenWidth == screenWidth && _lastScreenHeight == screenHeight && _lastCameraZoom == cameraZoom
+                && _lastSizePreset == sizePreset && _lastOcclusionEnabled == occlusionEnabled && _lastOcclusionAngle == angleThreshold
+                && now < _nextProjectionRefresh)
+                return;
+            _projectionDirty = false;
+            _lastViewMatrix = viewMatrix;
+            _lastProjectionMatrix = projectionMatrix;
+            _lastScreenWidth = screenWidth;
+            _lastScreenHeight = screenHeight;
+            _lastCameraZoom = cameraZoom;
+            _lastSizePreset = sizePreset;
+            _lastOcclusionEnabled = occlusionEnabled;
+            _lastOcclusionAngle = angleThreshold;
+            _nextProjectionRefresh = occlusionEnabled && cameraAngle <= angleThreshold
+                ? (cameraStable ? now + OcclusionCacheSeconds : _lastCameraMovementTime + CameraSettleSeconds)
+                : float.PositiveInfinity;
+            _visible.Clear();
+            _occlusionCandidates.Clear();
             for (var i = 0; i < _anchors.Count && _visible.Count < MaxVisibleShields; i++)
             {
                 var anchor = _anchors[i];
@@ -272,11 +283,11 @@ namespace AdvancedRoadNaming.Systems
                 if (point.z <= 0f || point.x < -80f || point.x > screenWidth + 80f || point.y < -80f || point.y > screenHeight + 80f)
                     continue;
 
-                var hasCachedResult = _occlusionCache.TryGetValue(i, out var cached)
+                var hasCachedResult = _occlusionCache.TryGetValue(anchor.Id, out var cached)
                     && cached.CameraGeneration == _cameraGeneration;
                 var occluded = occlusionEnabled && cameraAngle <= angleThreshold && (!hasCachedResult || cached.Occluded);
                 _visible.Add(new VisibleRouteShield(
-                    i,
+                    anchor.Id,
                     BuildShieldSelection(anchor.Style, anchor.ImportId),
                     anchor.Label,
                     point.x,
@@ -443,6 +454,7 @@ namespace AdvancedRoadNaming.Systems
             }
 
             _pendingCameraGeneration = _cameraGeneration;
+            _pendingGeometryGeneration = _geometryGeneration;
             _raycastSubmittedFrame = UnityEngine.Time.frameCount;
         }
 
@@ -453,9 +465,19 @@ namespace AdvancedRoadNaming.Systems
 
             NativeArray<RaycastResult> results = _raycastSystem.GetResult(_raycastContext);
             if (!results.IsCreated || results.Length != _pendingOcclusionAnchors.Count)
+            {
+                // Results are per-frame, not a persistent request queue. Recover if a load
+                // or skipped raycast pass dropped this batch rather than stalling forever.
+                if (UnityEngine.Time.frameCount - _raycastSubmittedFrame > 8)
+                {
+                    _pendingOcclusionAnchors.Clear();
+                    _raycastSubmittedFrame = -1;
+                    _projectionDirty = true;
+                }
                 return;
+            }
 
-            var acceptResults = _pendingCameraGeneration == _cameraGeneration;
+            var acceptResults = _pendingCameraGeneration == _cameraGeneration && _pendingGeometryGeneration == _geometryGeneration;
             for (var i = 0; i < results.Length; i++)
             {
                 if (!acceptResults)
@@ -467,10 +489,12 @@ namespace AdvancedRoadNaming.Systems
                 var hasHit = (hitEntity != Entity.Null || reportedOwner != Entity.Null)
                     && result.m_Hit.m_NormalizedDistance < 0.995f;
                 var occluded = hasHit && IsBuilding(hitEntity, reportedOwner);
-                _occlusionCache[_pendingOcclusionAnchors[i]] = new OcclusionCacheEntry(occluded, UnityEngine.Time.unscaledTime, _cameraGeneration);
+                _projectionDirty = true;
+                _occlusionCache[_anchors[_pendingOcclusionAnchors[i]].Id] = new OcclusionCacheEntry(occluded, UnityEngine.Time.unscaledTime, _cameraGeneration);
             }
 
             _pendingOcclusionAnchors.Clear();
+            _projectionDirty = true;
             _raycastSubmittedFrame = -1;
             _pendingCameraGeneration = -1;
         }
@@ -497,31 +521,29 @@ namespace AdvancedRoadNaming.Systems
             return false;
         }
 
-        private void ClearOcclusionState()
-        {
-            _occlusionCache.Clear();
-            _pendingOcclusionAnchors.Clear();
-            _raycastSubmittedFrame = -1;
-            _pendingCameraGeneration = -1;
-        }
-
         private readonly struct RouteShieldAnchor
         {
-            public RouteShieldAnchor(RouteShieldStyle style, string importId, string label, float3 position)
+            public RouteShieldAnchor(int id, long routeId, int ordinal, RouteShieldStyle style, string importId, string label, float3 position)
             {
+                Id = id;
+                RouteId = routeId;
+                Ordinal = ordinal;
                 Style = style;
                 ImportId = importId ?? string.Empty;
                 Label = label;
                 Position = position;
             }
 
+            public int Id { get; }
+            public long RouteId { get; }
+            public int Ordinal { get; }
             public RouteShieldStyle Style { get; }
             public string ImportId { get; }
             public string Label { get; }
             public float3 Position { get; }
         }
 
-        private readonly struct VisibleRouteShield
+        private readonly struct VisibleRouteShield : IEquatable<VisibleRouteShield>
         {
             public VisibleRouteShield(int id, string style, string label, float left, float top, float scale, bool occluded)
             {
@@ -541,6 +563,8 @@ namespace AdvancedRoadNaming.Systems
             public float Top { get; }
             public float Scale { get; }
             public bool Occluded { get; }
+            public bool Equals(VisibleRouteShield other) => Id == other.Id && Style == other.Style && Label == other.Label
+                && Left == other.Left && Top == other.Top && Scale == other.Scale && Occluded == other.Occluded;
         }
 
         private readonly struct OcclusionCandidate

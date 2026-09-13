@@ -1,4 +1,5 @@
-import { panelState$ } from "bindings";
+import { useMemo } from "react";
+import { panelState$, savedRoutes$ } from "bindings";
 import { DEFAULT_PANEL_STATE } from "constants";
 import { useBindingValue } from "hooks/useBindingValue";
 import { PanelState, RouteShieldSelection, RouteShieldStyle, RouteToolMode, SavedRoute } from "types";
@@ -152,5 +153,10 @@ export function parsePanelState(raw: string): PanelState {
 
 export function usePanelState(): PanelState {
     const rawState = useBindingValue(panelState$, DEFAULT_PANEL_STATE);
-    return parsePanelState(rawState);
+    const savedRoutesJson = useBindingValue(savedRoutes$, null);
+    const state = useMemo(() => parsePanelState(rawState), [rawState]);
+    const savedRoutes = useMemo(() => savedRoutesJson === null ? null : parseSavedRoutes(savedRoutesJson), [savedRoutesJson]);
+    // A UI refresh can precede the game's C# restart. Keep the old payload readable
+    // until the separate binding first arrives from the new backend.
+    return useMemo(() => ({ ...state, savedRoutes: savedRoutes ?? state.savedRoutes }), [state, savedRoutes]);
 }

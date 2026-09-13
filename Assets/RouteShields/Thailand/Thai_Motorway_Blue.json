@@ -8,6 +8,16 @@
   "widthRem": 34,
   "heightRem": 34,
   "textLayers": [
-    { "id": "route-number", "source": "number", "text": "", "color": "#FFFFFF", "fontSizeRem": 20, "offsetXRem": 0, "offsetYRem": 7, "scalePercent": 72, "rotationDegrees": 0 }
+    {
+      "id": "route-number",
+      "source": "number",
+      "text": "",
+      "color": "#FFFFFF",
+      "fontSizeRem": 20,
+      "offsetXRem": 0,
+      "offsetYRem": 2.7,
+      "scalePercent": 72,
+      "rotationDegrees": 0
+    }
   ]
 }

@@ -4,6 +4,7 @@ import { DEFAULT_PANEL_STATE, PANEL_GROUP } from "constants";
 import { engine } from "engine";
 import { RouteNumberPlacement, RoutePanelScreen, RouteShieldDefinition, RouteShieldOverlayItem, RouteShieldSelection, RouteStatistics, RouteToolModeCommand } from "types";
 
+export const savedRoutes$ = bindValue<string | null>(PANEL_GROUP, "savedRoutes", null);
 export const panelState$ = bindValue<string>(PANEL_GROUP, "state", DEFAULT_PANEL_STATE);
 export const panelShortcutCommand$ = bindValue<string>(PANEL_GROUP, "panelShortcutCommand", "0|none");
 export const routeStatistics$ = bindValue<RouteStatistics | null>(PANEL_GROUP, "routeStatistics", null);

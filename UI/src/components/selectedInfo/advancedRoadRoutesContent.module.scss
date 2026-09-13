@@ -252,6 +252,22 @@
     background-color: rgba(12, 26, 34, 0.9);
 }
 
+.districtFilterScroll {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.districtFilterChip {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 50rem;
+    max-width: none;
+    padding: 0 10rem;
+    white-space: nowrap;
+}
+
 .routeFilterChipSelected {
     color: #fff;
     background-color: rgba(0, 120, 191, 0.72);

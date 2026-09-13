@@ -50,6 +50,9 @@
 	<Import Project="$(CSII_TOOLPATH)\Mod.targets" />
 
 	<ItemGroup>
+        <Compile Remove="Tests\**\*.cs" />
+	</ItemGroup>
+	<ItemGroup>
 		<Reference Include="Game">
 			<Private>false</Private>
 		</Reference>

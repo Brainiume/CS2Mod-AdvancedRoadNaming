@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Colossal.Mathematics;
 using Game.Net;
@@ -42,7 +43,14 @@ namespace AdvancedRoadNaming.Services
 
             try
             {
-                BuildTrimmedRouteGeometry(segments, waypoints, curves, segmentInfos);
+                if (waypoints != null && waypoints.Count >= 2)
+                {
+                    var pathing = new RoadNetworkPathingService(entityManager, new SegmentValidationService(entityManager));
+                    BuildWaypointRouteGeometry(segments, waypoints, curves, segmentInfos,
+                        (from, to) => pathing.FindPath(from, to, 512));
+                }
+                else
+                    BuildTrimmedRouteGeometry(segments, waypoints, curves, segmentInfos);
             }
             catch
             {
@@ -50,8 +58,53 @@ namespace AdvancedRoadNaming.Services
                 AddFullValidSegmentCurves(segmentInfos, curves);
             }
 
-            if (curves.Count == 0)
+            if (curves.Count == 0 && (waypoints == null || waypoints.Count < 2))
                 AddFullValidSegmentCurves(segmentInfos, curves);
+        }
+
+        private static void BuildWaypointRouteGeometry(
+            IReadOnlyList<Entity> segments,
+            IReadOnlyList<RoadRouteWaypoint> waypoints,
+            List<Bezier4x3> curves,
+            SegmentInfo[] segmentInfos,
+            Func<Entity, Entity, IReadOnlyList<Entity>> findPath)
+        {
+            // Membership is unique, not a traversal: a spur can be visited and left
+            // several times. Reconstruct the same legs as the waypoint selection tool.
+            var members = new Dictionary<Entity, SegmentInfo>();
+            for (var i = 0; i < segments.Count; i++)
+                if (segmentInfos[i].IsValid)
+                    members[segments[i]] = segmentInfos[i];
+
+            var endpoints = new RoadRouteWaypoint[2];
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                endpoints[0] = waypoints[i - 1];
+                endpoints[1] = waypoints[i];
+                if (!members.ContainsKey(endpoints[0].Segment) || !members.ContainsKey(endpoints[1].Segment))
+                    continue;
+
+                var path = findPath(endpoints[0].Segment, endpoints[1].Segment);
+                if (path == null || path.Count == 0)
+                    continue;
+
+                var legInfos = new SegmentInfo[path.Count];
+                var valid = true;
+                for (var j = 0; j < path.Count; j++)
+                {
+                    if (!members.TryGetValue(path[j], out legInfos[j]))
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+
+                // Do not invent connections through roads missing from the saved route.
+                // Each leg ends exactly at its waypoint; a reversal retraces the road
+                // instead of receiving a smoothing curve across the turnaround.
+                if (valid)
+                    BuildTrimmedRouteGeometry(path, endpoints, curves, legInfos);
+            }
         }
 
         private static void BuildTrimmedRouteGeometry(
@@ -60,15 +113,25 @@ namespace AdvancedRoadNaming.Services
             List<Bezier4x3> curves,
             SegmentInfo[] segmentInfos)
         {
+            var hasStartEndpoint = TryGetRouteEndpoint(segments, waypoints, true, out var startWaypoint);
+            var hasEndEndpoint = TryGetRouteEndpoint(segments, waypoints, false, out var endWaypoint);
             var connections = new ConnectionInfo?[math.max(segments.Count - 1, 0)];
             for (var i = 0; i < connections.Length; i++)
             {
                 if (segmentInfos[i].IsValid && segmentInfos[i + 1].IsValid && TryBuildConnection(segmentInfos[i], segmentInfos[i + 1], out var connection))
+                {
+                    var currentT = connection.CurrentTrimParameter;
+                    var nextT = connection.NextTrimParameter;
+                    // A waypoint inside the normal junction trim must remain the endpoint.
+                    if (i == 0 && hasStartEndpoint)
+                        currentT = connection.CurrentUsesStart ? math.min(currentT, startWaypoint.CurvePosition) : math.max(currentT, startWaypoint.CurvePosition);
+                    if (i == connections.Length - 1 && hasEndEndpoint)
+                        nextT = connection.NextUsesStart ? math.min(nextT, endWaypoint.CurvePosition) : math.max(nextT, endWaypoint.CurvePosition);
+                    connection = new ConnectionInfo(connection.Current, connection.Next, connection.Anchor,
+                        connection.CurrentUsesStart, connection.NextUsesStart, currentT, nextT, connection.Alignment, connection.Distance);
                     connections[i] = connection;
+                }
             }
-
-            var hasStartEndpoint = TryGetRouteEndpoint(segments, waypoints, true, out var startWaypoint);
-            var hasEndEndpoint = TryGetRouteEndpoint(segments, waypoints, false, out var endWaypoint);
 
             for (var i = 0; i < segmentInfos.Length; i++)
             {
@@ -80,32 +143,19 @@ namespace AdvancedRoadNaming.Services
                 var startEndpoint = hasStartEndpoint ? (RoadRouteWaypoint?)startWaypoint : null;
                 var endEndpoint = hasEndEndpoint ? (RoadRouteWaypoint?)endWaypoint : null;
 
-                if (!TryBuildSegmentRange(segmentInfos[i], previous, next, startEndpoint, endEndpoint, i == 0, i == segmentInfos.Length - 1, out var range))
+                var reverse = previous.HasValue ? !previous.Value.NextUsesStart
+                    : next.HasValue ? next.Value.CurrentUsesStart
+                    : hasStartEndpoint && hasEndEndpoint && startWaypoint.CurvePosition > endWaypoint.CurvePosition;
+                if (TryBuildSegmentRange(segmentInfos[i], previous, next, startEndpoint, endEndpoint,
+                    i == 0, i == segmentInfos.Length - 1, out var range))
                 {
-                    curves.Add(segmentInfos[i].Curve);
-                    continue;
+                    var curve = range.x <= RangeEpsilon && range.y >= 1f - RangeEpsilon
+                        ? segmentInfos[i].Curve : RouteOverlayMath.Cut(segmentInfos[i].Curve, range);
+                    curves.Add(reverse ? new Bezier4x3(curve.d, curve.c, curve.b, curve.a) : curve);
                 }
 
-                if (range.x <= RangeEpsilon && range.y >= 1f - RangeEpsilon)
-                {
-                    curves.Add(segmentInfos[i].Curve);
-                }
-                else
-                {
-                    try
-                    {
-                        curves.Add(RouteOverlayMath.Cut(segmentInfos[i].Curve, range));
-                    }
-                    catch
-                    {
-                        curves.Add(segmentInfos[i].Curve);
-                    }
-                }
-            }
-
-            for (var i = 0; i < connections.Length; i++)
-            {
-                if (connections[i].HasValue && TryBuildJoinCurve(connections[i].Value, out var joinCurve))
+                // Anchor distance follows the route, so connectors belong between their roads.
+                if (next.HasValue && TryBuildJoinCurve(next.Value, out var joinCurve))
                     curves.Add(joinCurve);
             }
         }
@@ -132,7 +182,8 @@ namespace AdvancedRoadNaming.Services
 
         private static SegmentInfo BuildSegmentInfo(EntityManager entityManager, Entity segment)
         {
-            if (segment == Entity.Null || !entityManager.Exists(segment) || !entityManager.HasComponent<Curve>(segment))
+            if (segment == Entity.Null || !entityManager.Exists(segment) || !entityManager.HasComponent<Curve>(segment)
+                || entityManager.HasComponent<Game.Common.Deleted>(segment) || entityManager.HasComponent<Game.Tools.Temp>(segment))
                 return default;
 
             var curve = entityManager.GetComponentData<Curve>(segment).m_Bezier;

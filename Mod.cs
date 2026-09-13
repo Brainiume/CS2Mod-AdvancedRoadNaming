@@ -67,6 +67,7 @@ namespace AdvancedRoadNaming
 
             updateSystem.UpdateAt<SegmentMetadataSystem>(SystemUpdatePhase.Deserialize);
             updateSystem.UpdateAt<SegmentMetadataSystem>(SystemUpdatePhase.Serialize);
+            updateSystem.UpdateAt<RoadNetworkRevisionSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<ProtectedAggregateReplacementCaptureSystem, ApplyNetSystem>(SystemUpdatePhase.ApplyTool);
             updateSystem.UpdateBefore<ProtectedAggregateRepairSystem, ModificationBarrier3>(SystemUpdatePhase.Modification3);
             // NameSystem.SetCustomName writes through EndFrameBarrier, so this consumer must run

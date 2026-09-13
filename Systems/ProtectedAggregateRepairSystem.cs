@@ -178,13 +178,7 @@ namespace AdvancedRoadNaming.Systems
             }
 
             var replacements = EntityManager.GetBuffer<AdvancedRoadNamingAggregateReplacementResult>(_runtimeEntity);
-            var migrated = 0;
-            for (var i = 0; i < replacements.Length; i++)
-            {
-                var replacement = replacements[i];
-                if (_metadataSystem.MigrateProtectedRoadReplacement(replacement.Original, replacement.Replacement))
-                    migrated++;
-            }
+            var migrated = _metadataSystem.MigrateProtectedRoadReplacements(replacements);
             replacements.Clear();
 
             var results = EntityManager.GetBuffer<AdvancedRoadNamingAggregateRepairResult>(_runtimeEntity);
@@ -673,9 +667,6 @@ namespace AdvancedRoadNaming.Systems
                     if (!Replacements.TryDequeue(out var replacement))
                         break;
 
-                    if (!ProtectedEdgeGroups.TryGetValue(replacement.Original, out var groupIndex))
-                        continue;
-
                     if (!IsValidPermanentReplacement(replacement.Original, replacement.Replacement))
                     {
                         if (EntityStorage.Exists(replacement.Replacement) && TempData.HasComponent(replacement.Replacement))
@@ -683,21 +674,15 @@ namespace AdvancedRoadNaming.Systems
                         continue;
                     }
 
-                    var group = Groups[groupIndex];
-                    for (var edgeIndex = 0; edgeIndex < group.EdgeCount; edgeIndex++)
-                    {
-                        var flatIndex = group.EdgeStart + edgeIndex;
-                        if (GroupEdges[flatIndex] == replacement.Original)
-                            GroupEdges[flatIndex] = replacement.Replacement;
-                    }
-
-                    ProtectedEdgeGroups.Remove(replacement.Original);
-                    ProtectedEdgeGroups.TryAdd(replacement.Replacement, groupIndex);
-                    DirtyGroups.Enqueue(groupIndex);
+                    // Forward every verified piece. The managed batch migrates metadata
+                    // before rebuilding the variable-size group registry. Replacing a
+                    // single slot here loses siblings when one edge becomes several.
+                    // Do not gate on a registry that may already have dropped Deleted edges.
                     CommandBuffer.AppendToBuffer(RuntimeEntity, new AdvancedRoadNamingAggregateReplacementResult
                     {
                         Original = replacement.Original,
-                        Replacement = replacement.Replacement
+                        Replacement = replacement.Replacement,
+                        OriginalCurve = replacement.OriginalCurve
                     });
                 }
             }
@@ -712,7 +697,7 @@ namespace AdvancedRoadNaming.Systems
                     && RoadData.HasComponent(replacement)
                     && !DeletedData.HasComponent(replacement)
                     && !TempData.HasComponent(replacement)
-                    && DeletedData.HasComponent(original);
+                    && (!EntityStorage.Exists(original) || DeletedData.HasComponent(original));
             }
 
             private void RepairGroup(

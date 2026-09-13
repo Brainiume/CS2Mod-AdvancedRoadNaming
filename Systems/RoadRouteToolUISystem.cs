@@ -81,6 +81,8 @@ namespace AdvancedRoadNaming.Systems
         private bool _hasStatisticsRefreshFrame;
         private bool _statisticsPayloadActive;
         private int _panelShortcutSequence;
+        private ValueBinding<string> _savedRoutesBinding;
+        private static readonly string[] ClosedStates = new string[8];
         private string _lastState;
         private bool _panelVisible;
         private bool _lastGameplayAvailable;
@@ -101,6 +103,7 @@ namespace AdvancedRoadNaming.Systems
             _panelShortcutCommandBinding = new ValueBinding<string>(PanelBindingGroup, "panelShortcutCommand", "0|none", ValueWriters.Create<string>(), System.Collections.Generic.EqualityComparer<string>.Default);
 
             AddBinding(_stateBinding);
+            AddBinding(_savedRoutesBinding = new ValueBinding<string>(PanelBindingGroup, "savedRoutes", "[]"));
             AddBinding(_panelShortcutCommandBinding);
             AddBinding(_routeStatisticsBinding = new RawValueBinding(PanelBindingGroup, "routeStatistics", WriteRouteStatistics));
             AddBinding(_routeShieldCatalogBinding = new RawValueBinding(PanelBindingGroup, "routeShieldCatalog", WriteRouteShieldCatalog));
@@ -155,6 +158,9 @@ namespace AdvancedRoadNaming.Systems
             }
 
             UpdateRouteStatistics(gameplayAvailable, false);
+
+            if (gameplayAvailable && _panelVisible)
+                _savedRoutesBinding.Update(BuildSavedRoutesPayloadForActiveMode());
 
             var state = gameplayAvailable && _panelVisible
                 ? BuildState(gameplayAvailable)
@@ -982,7 +988,6 @@ namespace AdvancedRoadNaming.Systems
                 var hover = _toolSystem == null || _toolSystem.HoveredSegment == Unity.Entities.Entity.Null
                     ? "none"
                     : _toolSystem.HoveredSegment.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                var savedRoutesJson = BuildSavedRoutesPayloadForActiveMode();
 
                 return string.Join("|", new[]
                 {
@@ -995,7 +1000,7 @@ namespace AdvancedRoadNaming.Systems
                     Escape(gameplayAvailable ? _toolSystem?.StatusMessage ?? string.Empty : string.Empty),
                     Escape(gameplayAvailable ? "1" : "0"),
                     Escape(waypointCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                    Escape(savedRoutesJson),
+                    "[]", // Saved routes have their own change-driven binding.
                     Escape((_toolSystem?.RouteNumberPlacement ?? RouteNumberPlacement.AfterBaseName).ToString()),
                     Escape(_toolSystem?.UndergroundMode == true ? "1" : "0"),
                     Escape((_toolSystem?.SelectedSavedRouteId ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -1018,7 +1023,12 @@ namespace AdvancedRoadNaming.Systems
 
         private static string BuildClosedState(bool gameplayAvailable)
         {
-            return string.Join("|", new[]
+            var key = (gameplayAvailable ? 1 : 0)
+                | (Mod.Settings?.EnableRouteStatistics == true ? 2 : 0)
+                | (Mod.Settings?.EnableSavedRenameRoutes != false ? 4 : 0);
+            if (ClosedStates[key] != null)
+                return ClosedStates[key];
+            return ClosedStates[key] = string.Join("|", new[]
             {
                 Escape("0"),
                 Escape(RoadRouteToolMode.AssignMajorRouteNumber.ToString()),

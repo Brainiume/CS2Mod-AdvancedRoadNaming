@@ -86,7 +86,8 @@ namespace AdvancedRoadNaming.Systems
             base.OnCreate();
             _repository = new SegmentMetadataRepository();
             _validation = new SegmentValidationService(EntityManager);
-            Pathing = new RoadNetworkPathingService(EntityManager, _validation);
+            var networkRevision = World.GetOrCreateSystemManaged<RoadNetworkRevisionSystem>();
+            Pathing = new RoadNetworkPathingService(EntityManager, _validation, () => networkRevision.Revision);
             _resolver = new SegmentDisplayNameResolver();
             _routeCodeService = new RouteCodeService();
             _routeDatabase = new RouteDatabaseService();
@@ -1454,96 +1455,112 @@ namespace AdvancedRoadNaming.Systems
                 Mod.log.Info(() => $"Road Naming: protected aggregate registry invalidated. Source={source}, Revision={_aggregateProtectionRevision}.");
         }
 
-        internal bool MigrateProtectedRoadReplacement(Entity original, Entity replacement)
+        internal int MigrateProtectedRoadReplacements(DynamicBuffer<AdvancedRoadNamingAggregateReplacementResult> replacements)
         {
-            if (original == Entity.Null
-                || replacement == Entity.Null
-                || original == replacement
-                || !_validation.IsValidRoadSegment(replacement))
+            var batches = new Dictionary<Entity, RoadReplacementGeometry>();
+            for (var i = 0; i < replacements.Length; i++)
             {
-                return false;
-            }
-
-            var changed = false;
-            if (_repository.TryGet(original, out var sourceMetadata))
-            {
-                var targetMetadata = _repository.GetOrCreate(replacement);
-                if (string.IsNullOrWhiteSpace(targetMetadata.BaseNameSnapshot))
-                    targetMetadata.BaseNameSnapshot = sourceMetadata.BaseNameSnapshot;
-                if (!string.IsNullOrWhiteSpace(sourceMetadata.OptionalCustomRoadName))
-                    targetMetadata.OptionalCustomRoadName = sourceMetadata.OptionalCustomRoadName;
-                for (var i = 0; i < sourceMetadata.RouteNumbers.Count; i++)
+                var item = replacements[i];
+                if (!_validation.IsValidRoadSegment(item.Replacement))
+                    continue;
+                if (!batches.TryGetValue(item.Original, out var batch))
                 {
-                    var routeNumber = sourceMetadata.RouteNumbers[i];
-                    if (!targetMetadata.RouteNumbers.Contains(routeNumber))
-                        targetMetadata.RouteNumbers.Add(routeNumber);
+                    batch = new RoadReplacementGeometry(item.OriginalCurve);
+                    batches.Add(item.Original, batch);
                 }
-                targetMetadata.RouteNumberPlacement = sourceMetadata.RouteNumberPlacement;
-                targetMetadata.Flags |= sourceMetadata.Flags;
-                targetMetadata.Touch();
-                _repository.Remove(original);
-                changed = true;
+                batch.Add(item.Replacement, EntityManager.GetComponentData<Curve>(item.Replacement).m_Bezier);
+            }
+            if (batches.Count == 0) return 0;
+            foreach (var batch in batches.Values) batch.Sort();
+
+            var migrated = 0;
+            // Keep every source available until every destination has inherited it.
+            // In particular, a split must not remove its source after the first piece.
+            foreach (var pair in batches)
+            {
+                if (!_repository.TryGet(pair.Key, out var source)) continue;
+                foreach (var piece in pair.Value.Pieces)
+                {
+                    var target = _repository.GetOrCreate(piece.Entity);
+                    if (string.IsNullOrWhiteSpace(target.BaseNameSnapshot)) target.BaseNameSnapshot = source.BaseNameSnapshot;
+                    if (!string.IsNullOrWhiteSpace(source.OptionalCustomRoadName)) target.OptionalCustomRoadName = source.OptionalCustomRoadName;
+                    foreach (var number in source.RouteNumbers)
+                        if (!target.RouteNumbers.Contains(number)) target.RouteNumbers.Add(number);
+                    target.RouteNumberPlacement = source.RouteNumberPlacement;
+                    target.Flags |= source.Flags;
+                    target.Touch();
+                    migrated++;
+                }
             }
 
             foreach (var route in _routeDatabase.Routes)
             {
-                if (route == null || route.IsDeleted)
-                    continue;
-
-                var routeChanged = false;
-                for (var i = route.OrderedSegmentIds.Count - 1; i >= 0; i--)
+                if (route == null || route.IsDeleted) continue;
+                var changed = false;
+                var segments = new List<Entity>();
+                var names = new List<string>();
+                var waypoints = new List<RoadRouteWaypoint>();
+                foreach (var waypoint in route.Waypoints)
                 {
-                    if (route.OrderedSegmentIds[i] != original)
-                        continue;
-
-                    var replacementAlreadyStored = route.OrderedSegmentIds.Contains(replacement);
-                    if (replacementAlreadyStored)
+                    if (batches.TryGetValue(waypoint.Segment, out var batch))
                     {
-                        route.OrderedSegmentIds.RemoveAt(i);
-                        if (i < route.OriginalStreetNamesSnapshot.Count)
-                            route.OriginalStreetNamesSnapshot.RemoveAt(i);
+                        waypoints.Add(batch.Remap(waypoint));
+                        changed = true;
                     }
-                    else
+                    else waypoints.Add(waypoint);
+                }
+                for (var i = 0; i < route.OrderedSegmentIds.Count; i++)
+                {
+                    var original = route.OrderedSegmentIds[i];
+                    var name = i < route.OriginalStreetNamesSnapshot.Count ? route.OriginalStreetNamesSnapshot[i] : string.Empty;
+                    if (!batches.TryGetValue(original, out var batch))
                     {
-                        route.OrderedSegmentIds[i] = replacement;
-                    }
-                    routeChanged = true;
-                }
-
-                for (var i = 0; i < route.Waypoints.Count; i++)
-                {
-                    var waypoint = route.Waypoints[i];
-                    if (waypoint.Segment != original)
+                        // A combined destination can already occur immediately before it.
+                        if (segments.Count == 0 || segments[segments.Count - 1] != original)
+                        {
+                            segments.Add(original);
+                            names.Add(name);
+                        }
                         continue;
-                    route.Waypoints[i] = new RoadRouteWaypoint(replacement, waypoint.Position, waypoint.CurvePosition);
-                    routeChanged = true;
-                }
-
-                if (route.StartAnchorSegment == original)
-                {
-                    route.StartAnchorSegment = replacement;
-                    routeChanged = true;
-                }
-                if (route.EndAnchorSegment == original)
-                {
-                    route.EndAnchorSegment = replacement;
-                    routeChanged = true;
-                }
-
-                if (routeChanged)
-                {
-                    route.LastKnownResolvedSegmentCount = FilterValidRouteSegments(route.OrderedSegmentIds).Count;
-                    route.UpdatedAtUtcTicks = System.DateTime.UtcNow.Ticks;
+                    }
+                    var previous = i > 0 ? GetReplacementSourceCurve(route.OrderedSegmentIds[i - 1], batches) : null;
+                    var next = i + 1 < route.OrderedSegmentIds.Count ? GetReplacementSourceCurve(route.OrderedSegmentIds[i + 1], batches) : null;
+                    var reversed = batch.IsReversed(previous, next, route.Waypoints, original);
+                    var pieces = batch.RoutePieces(reversed,
+                        i == 0 && waypoints.Count > 0 ? waypoints[0].Segment : Entity.Null,
+                        i == route.OrderedSegmentIds.Count - 1 && waypoints.Count > 0 ? waypoints[waypoints.Count - 1].Segment : Entity.Null);
+                    foreach (var piece in pieces)
+                    {
+                        if (segments.Count > 0 && segments[segments.Count - 1] == piece) continue;
+                        segments.Add(piece);
+                        names.Add(name);
+                    }
                     changed = true;
                 }
+                if (changed)
+                {
+                    // This refreshes anchor parameters and advances Version, which the
+                    // route list, managed overlays and shields use for invalidation.
+                    _routeDatabase.ReplaceRouteIntent(route, route.RouteNumberPlacement, waypoints, segments, names);
+                    migrated++;
+                }
             }
-
-            if (changed)
+            foreach (var original in batches.Keys) _repository.Remove(original);
+            if (migrated > 0)
             {
-                InvalidateProtectedAggregateRegistry("VerifiedRoadReplacement");
-                Mod.log.Info(() => $"Road Naming: migrated protected road replacement. Original={original.Index}, Replacement={replacement.Index}.");
+                InvalidateProtectedAggregateRegistry("VerifiedRoadReplacementBatch");
+                RequestPersistedNameReconciliation(PersistedNameReapplyDelayTicks);
+                Mod.log.Info(() => $"Road Naming: migrated road replacement batch. Originals={batches.Count}, MetadataAndRoutes={migrated}.");
             }
-            return changed;
+            return migrated;
+        }
+
+        private Colossal.Mathematics.Bezier4x3? GetReplacementSourceCurve(Entity segment, Dictionary<Entity, RoadReplacementGeometry> batches)
+        {
+            if (batches.TryGetValue(segment, out var batch)) return batch.Original;
+            return EntityManager.Exists(segment) && EntityManager.HasComponent<Curve>(segment)
+                ? EntityManager.GetComponentData<Curve>(segment).m_Bezier
+                : (Colossal.Mathematics.Bezier4x3?)null;
         }
 
         private List<Entity> ExtractCompatibleMetadataComponent(Entity seed, HashSet<Entity> candidates, Entity prefab, string finalName)
@@ -2981,6 +2998,7 @@ namespace AdvancedRoadNaming.Systems
                         "\"endRoadName\":" + JsonString(route.EndRoadName) + "," +
                         "\"derivedDisplayCorridor\":" + JsonString(route.DerivedDisplayCorridor) + "," +
                         "\"districtSummary\":" + JsonString(route.DistrictSummary) + "," +
+                        "\"districts\":" + (mode == RoadRouteToolMode.RenameSelectedSegments ? BuildRouteDistrictsJson(route.OrderedSegmentIds) : "[]") + "," +
                         "\"subtitle\":" + JsonString(BuildRouteSubtitle(route)) + "," +
                         "\"updated\":" + JsonString(FormatUtcTicks(route.UpdatedAtUtcTicks)) +
                         "}");
@@ -3262,6 +3280,43 @@ namespace AdvancedRoadNaming.Systems
         private static string NormalizeRouteCode(string value)
         {
             return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
+        }
+
+        // Full, live district membership for filtering; the display summary is truncated.
+        private string BuildRouteDistrictsJson(IReadOnlyList<Entity> segments)
+        {
+            var districts = new HashSet<Entity>();
+            var builder = new StringBuilder("[");
+            var appended = false;
+            void AddDistrict(Entity district)
+            {
+                if (district == Entity.Null || !EntityManager.Exists(district)
+                    || EntityManager.HasComponent<Game.Common.Deleted>(district)
+                    || !districts.Add(district) || !TryResolveDistrictEntityName(district, out var name))
+                    return;
+                AppendJsonSeparator(builder, ref appended);
+                builder.Append("{\"id\":" + JsonString(district.Index + ":" + district.Version)
+                    + ",\"name\":" + JsonString(name) + "}");
+            }
+
+            if (segments != null)
+            {
+                foreach (var segment in segments)
+                {
+                    if (segment == Entity.Null || !EntityManager.Exists(segment)
+                        || EntityManager.HasComponent<Game.Common.Deleted>(segment))
+                        continue;
+                    if (EntityManager.HasComponent<Game.Areas.CurrentDistrict>(segment))
+                        AddDistrict(EntityManager.GetComponentData<Game.Areas.CurrentDistrict>(segment).m_District);
+                    if (EntityManager.HasComponent<Game.Areas.BorderDistrict>(segment))
+                    {
+                        var border = EntityManager.GetComponentData<Game.Areas.BorderDistrict>(segment);
+                        AddDistrict(border.m_Left);
+                        AddDistrict(border.m_Right);
+                    }
+                }
+            }
+            return builder.Append(']').ToString();
         }
 
         // Tries to pull the district name for a segment from either current or border district data.
